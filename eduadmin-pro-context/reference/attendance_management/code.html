@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>EduAdmin Pro - Attendance Management</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "error": "#ba1a1a",
+                        "tertiary-fixed": "#ffdad7",
+                        "primary": "#022448",
+                        "inverse-on-surface": "#f0f1f2",
+                        "secondary-fixed-dim": "#4edea3",
+                        "surface": "#f8f9fa",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e1e3e4",
+                        "surface-dim": "#d9dadb",
+                        "on-tertiary": "#ffffff",
+                        "background": "#f8f9fa",
+                        "on-surface-variant": "#43474e",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed": "#d5e3ff",
+                        "secondary-container": "#6cf8bb",
+                        "outline": "#74777f",
+                        "surface-tint": "#455f87",
+                        "on-tertiary-fixed": "#410004",
+                        "surface-container-high": "#e7e8e9",
+                        "on-primary-fixed": "#001c3b",
+                        "on-tertiary-container": "#ff7a73",
+                        "secondary-fixed": "#6ffbbe",
+                        "tertiary": "#500006",
+                        "error-container": "#ffdad6",
+                        "on-secondary-container": "#00714d",
+                        "tertiary-container": "#79000e",
+                        "on-tertiary-fixed-variant": "#930013",
+                        "outline-variant": "#c4c6cf",
+                        "surface-bright": "#f8f9fa",
+                        "primary-fixed-dim": "#adc8f5",
+                        "secondary": "#006c49",
+                        "on-background": "#191c1d",
+                        "surface-container": "#edeeef",
+                        "on-primary": "#ffffff",
+                        "inverse-primary": "#adc8f5",
+                        "surface-container-low": "#f3f4f5",
+                        "primary-container": "#1e3a5f",
+                        "on-secondary-fixed": "#002113",
+                        "tertiary-fixed-dim": "#ffb3ad",
+                        "surface-variant": "#e1e3e4",
+                        "inverse-surface": "#2e3132",
+                        "on-surface": "#191c1d",
+                        "on-primary-container": "#8aa4cf",
+                        "on-primary-fixed-variant": "#2d486d",
+                        "on-secondary-fixed-variant": "#005236"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sidebar-width": "260px",
+                        "base": "4px",
+                        "lg": "24px",
+                        "xl": "32px",
+                        "container-max": "1440px",
+                        "sm": "12px",
+                        "md": "16px",
+                        "xs": "8px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "headline-sm": ["18px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "label-md": ["13px", {"lineHeight": "18px", "fontWeight": "500"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .attendance-toggle:checked + label {
+            background-color: var(--active-bg);
+            color: var(--active-text);
+            border-color: var(--active-border);
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-md overflow-hidden">
+<!-- Side Navigation Shell -->
+<aside class="fixed left-0 top-0 h-full w-sidebar-width bg-surface-container-lowest dark:bg-surface-container-low border-r border-outline-variant dark:border-outline shadow-sm flex flex-col p-md z-50">
+<div class="mb-xl px-md">
+<h1 class="text-headline-sm font-headline-sm text-primary dark:text-primary-fixed">EduAdmin Pro</h1>
+<p class="text-label-sm text-on-surface-variant">Principal Portal</p>
+</div>
+<nav class="flex-1 space-y-base">
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high px-md py-sm transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high px-md py-sm transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Students</span>
+</a>
+<!-- Active State: Attendance -->
+<a class="flex items-center gap-sm bg-primary-container text-on-primary-container rounded-lg px-md py-sm border-l-4 border-primary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span>Attendance</span>
+</a>
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high px-md py-sm transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+<span>Fees</span>
+</a>
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high px-md py-sm transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="assessment">assessment</span>
+<span>Reports</span>
+</a>
+</nav>
+<div class="mt-auto space-y-base pt-md border-t border-outline-variant">
+<button class="w-full bg-primary text-on-primary font-label-md py-sm rounded-lg active:scale-95 transition-all mb-md">
+                New Registration
+            </button>
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high px-md py-sm transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high px-md py-sm transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span>Logout</span>
+</a>
+</div>
+</aside>
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface-container-lowest dark:bg-surface-container-low border-b border-outline-variant dark:border-outline flex justify-between items-center px-xl z-40">
+<div class="flex items-center gap-lg">
+<div class="flex items-center gap-md">
+<div class="relative">
+<select class="appearance-none bg-surface-container-low border border-outline-variant rounded-lg pl-md pr-xl py-xs text-label-md focus:ring-2 focus:ring-primary outline-none cursor-pointer">
+<option>Class 10</option>
+<option>Class 11</option>
+<option>Class 12</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant scale-75">expand_more</span>
+</div>
+<div class="relative">
+<select class="appearance-none bg-surface-container-low border border-outline-variant rounded-lg pl-md pr-xl py-xs text-label-md focus:ring-2 focus:ring-primary outline-none cursor-pointer">
+<option>Section A</option>
+<option>Section B</option>
+<option>Section C</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant scale-75">expand_more</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="bg-surface-container-low border-none rounded-full pl-10 pr-md py-xs text-label-md w-64 focus:ring-2 focus:ring-primary outline-none" placeholder="Search student..." type="text"/>
+</div>
+<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-xs rounded-full transition-all">notifications</button>
+<div class="h-8 w-px bg-outline-variant mx-xs"></div>
+<div class="flex items-center gap-xs cursor-pointer group">
+<img class="w-8 h-8 rounded-full object-cover" data-alt="A professional headshot of a school principal in a modern office, wearing a dark navy blazer, looking confident and approachable. The lighting is warm and natural, suggesting an afternoon setting in a high-end corporate school environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBZukRfiZyKLHDCpBzSgrH9CYu6PbpEDz8o76lyNqSw-4Xqv1q9z3mSo8M_ikQGfUGWgywZ0zsQZ1Sj6ulzLhcIyumyGJAxwRn9NOaGDFPGPP38pI5-LUDlJHw7NXVIyG8sqXJ3tZX1pzogamyUU7V2R2vMRpBQZBWQ_RTCgaULp0gyqJXx06JT-fgktkad3gCpqB7lTYx9Va7ZqtESXdm-MB6KhOiPBy-0p-s7H6DkNyq8djarKtmCdA"/>
+<span class="text-label-md font-bold group-hover:text-primary transition-colors">Admin Profile</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-sidebar-width pt-16 h-screen overflow-y-auto scrollbar-hide">
+<div class="p-xl max-w-[1440px] mx-auto">
+<!-- Summary Header Card -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-lg mb-lg flex flex-wrap items-center justify-between gap-lg">
+<div class="flex items-center gap-lg">
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wider mb-base">Daily Attendance</p>
+<div class="flex items-baseline gap-xs">
+<span class="text-display-lg font-display-lg text-primary">94.2%</span>
+<span class="text-label-md text-secondary font-bold flex items-center">
+<span class="material-symbols-outlined text-[16px]">trending_up</span> +1.5%
+                            </span>
+</div>
+</div>
+<div class="h-12 w-px bg-outline-variant"></div>
+<div class="flex gap-lg text-center">
+<div>
+<p class="text-label-sm text-on-surface-variant">Present</p>
+<p class="font-bold text-headline-sm">42</p>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant">Absent</p>
+<p class="font-bold text-headline-sm text-error">2</p>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant">Late</p>
+<p class="font-bold text-headline-sm text-tertiary-container">1</p>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<button class="flex items-center gap-xs border border-outline-variant px-md py-xs rounded-lg hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[18px]">file_download</span>
+<span class="text-label-md">Export Daily Report</span>
+</button>
+<button class="bg-secondary text-on-secondary px-lg py-xs rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all">
+                        Mark All Present
+                    </button>
+</div>
+</div>
+<div class="flex flex-col lg:flex-row gap-lg">
+<!-- Students List -->
+<div class="flex-1">
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<div class="px-lg py-md border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
+<h2 class="font-headline-sm text-on-surface">Student Roll Call</h2>
+<span class="text-label-sm text-on-surface-variant">Tuesday, Oct 24, 2023</span>
+</div>
+<div class="divide-y divide-outline-variant">
+<!-- Student Row 1 -->
+<div class="px-lg py-md hover:bg-surface-container-lowest transition-colors flex items-center justify-between group">
+<div class="flex items-center gap-md">
+<span class="text-label-sm text-outline w-6">01</span>
+<div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed font-bold">JD</div>
+<div>
+<p class="font-bold text-on-surface">James Doe</p>
+<p class="text-label-sm text-on-surface-variant">Roll No: 1045A</p>
+</div>
+</div>
+<div class="flex gap-base">
+<input checked="" class="hidden peer/p" id="att_01_p" name="att_01" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/p:bg-secondary peer-checked/p:text-on-secondary peer-checked/p:border-secondary" for="att_01_p">Present</label>
+<input class="hidden peer/a" id="att_01_a" name="att_01" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/a:bg-error peer-checked/a:text-on-error peer-checked/a:border-error" for="att_01_a">Absent</label>
+<input class="hidden peer/l" id="att_01_l" name="att_01" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/l:bg-tertiary-container peer-checked/l:text-on-tertiary-container peer-checked/l:border-tertiary-container" for="att_01_l">Late</label>
+</div>
+</div>
+<!-- Student Row 2 -->
+<div class="px-lg py-md hover:bg-surface-container-lowest transition-colors flex items-center justify-between group">
+<div class="flex items-center gap-md">
+<span class="text-label-sm text-outline w-6">02</span>
+<div class="w-10 h-10 rounded-full bg-secondary-fixed-dim flex items-center justify-center text-on-secondary-fixed font-bold">AS</div>
+<div>
+<p class="font-bold text-on-surface">Alice Smith</p>
+<p class="text-label-sm text-on-surface-variant">Roll No: 1046A</p>
+</div>
+</div>
+<div class="flex gap-base">
+<input class="hidden peer/p" id="att_02_p" name="att_02" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/p:bg-secondary peer-checked/p:text-on-secondary peer-checked/p:border-secondary" for="att_02_p">Present</label>
+<input checked="" class="hidden peer/a" id="att_02_a" name="att_02" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/a:bg-error peer-checked/a:text-on-error peer-checked/a:border-error" for="att_02_a">Absent</label>
+<input class="hidden peer/l" id="att_02_l" name="att_02" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/l:bg-tertiary-container peer-checked/l:text-on-tertiary-container peer-checked/l:border-tertiary-container" for="att_02_l">Late</label>
+</div>
+</div>
+<!-- Student Row 3 -->
+<div class="px-lg py-md hover:bg-surface-container-lowest transition-colors flex items-center justify-between group">
+<div class="flex items-center gap-md">
+<span class="text-label-sm text-outline w-6">03</span>
+<div class="w-10 h-10 rounded-full bg-tertiary-fixed flex items-center justify-center text-on-tertiary-fixed font-bold">MB</div>
+<div>
+<p class="font-bold text-on-surface">Marcus Brown</p>
+<p class="text-label-sm text-on-surface-variant">Roll No: 1047A</p>
+</div>
+</div>
+<div class="flex gap-base">
+<input checked="" class="hidden peer/p" id="att_03_p" name="att_03" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/p:bg-secondary peer-checked/p:text-on-secondary peer-checked/p:border-secondary" for="att_03_p">Present</label>
+<input class="hidden peer/a" id="att_03_a" name="att_03" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/a:bg-error peer-checked/a:text-on-error peer-checked/a:border-error" for="att_03_a">Absent</label>
+<input class="hidden peer/l" id="att_03_l" name="att_03" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/l:bg-tertiary-container peer-checked/l:text-on-tertiary-container peer-checked/l:border-tertiary-container" for="att_03_l">Late</label>
+</div>
+</div>
+<!-- Student Row 4 -->
+<div class="px-lg py-md hover:bg-surface-container-lowest transition-colors flex items-center justify-between group">
+<div class="flex items-center gap-md">
+<span class="text-label-sm text-outline w-6">04</span>
+<div class="w-10 h-10 rounded-full bg-primary-fixed-dim flex items-center justify-center text-on-primary-fixed-variant font-bold">LW</div>
+<div>
+<p class="font-bold text-on-surface">Linda White</p>
+<p class="text-label-sm text-on-surface-variant">Roll No: 1048A</p>
+</div>
+</div>
+<div class="flex gap-base">
+<input class="hidden peer/p" id="att_04_p" name="att_04" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/p:bg-secondary peer-checked/p:text-on-secondary peer-checked/p:border-secondary" for="att_04_p">Present</label>
+<input class="hidden peer/a" id="att_04_a" name="att_04" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/a:bg-error peer-checked/a:text-on-error peer-checked/a:border-error" for="att_04_a">Absent</label>
+<input checked="" class="hidden peer/l" id="att_04_l" name="att_04" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/l:bg-tertiary-container peer-checked/l:text-on-tertiary-container peer-checked/l:border-tertiary-container" for="att_04_l">Late</label>
+</div>
+</div>
+<!-- Student Row 5 -->
+<div class="px-lg py-md hover:bg-surface-container-lowest transition-colors flex items-center justify-between group">
+<div class="flex items-center gap-md">
+<span class="text-label-sm text-outline w-6">05</span>
+<div class="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed-variant font-bold">RK</div>
+<div>
+<p class="font-bold text-on-surface">Robert King</p>
+<p class="text-label-sm text-on-surface-variant">Roll No: 1049A</p>
+</div>
+</div>
+<div class="flex gap-base">
+<input checked="" class="hidden peer/p" id="att_05_p" name="att_05" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/p:bg-secondary peer-checked/p:text-on-secondary peer-checked/p:border-secondary" for="att_05_p">Present</label>
+<input class="hidden peer/a" id="att_05_a" name="att_05" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/a:bg-error peer-checked/a:text-on-error peer-checked/a:border-error" for="att_05_a">Absent</label>
+<input class="hidden peer/l" id="att_05_l" name="att_05" type="radio"/>
+<label class="px-md py-xs rounded-lg border border-outline-variant text-label-sm cursor-pointer hover:bg-surface-container-high transition-all peer-checked/l:bg-tertiary-container peer-checked/l:text-on-tertiary-container peer-checked/l:border-tertiary-container" for="att_05_l">Late</label>
+</div>
+</div>
+</div>
+<div class="p-md bg-surface-container-low text-center">
+<button class="text-primary font-bold text-label-md hover:underline">View All 45 Students</button>
+</div>
+</div>
+</div>
+<!-- Calendar Widget Sidebar -->
+<div class="w-full lg:w-80 flex flex-col gap-lg">
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-lg">
+<div class="flex items-center justify-between mb-md">
+<h3 class="font-bold text-label-md">Historical Lookback</h3>
+<div class="flex gap-xs">
+<button class="material-symbols-outlined scale-75 hover:bg-surface-container-high rounded-full p-1">chevron_left</button>
+<button class="material-symbols-outlined scale-75 hover:bg-surface-container-high rounded-full p-1">chevron_right</button>
+</div>
+</div>
+<div class="text-center mb-sm">
+<span class="text-label-md font-bold">October 2023</span>
+</div>
+<div class="grid grid-cols-7 gap-y-xs text-center text-label-sm mb-base">
+<div class="text-outline">M</div>
+<div class="text-outline">T</div>
+<div class="text-outline">W</div>
+<div class="text-outline">T</div>
+<div class="text-outline">F</div>
+<div class="text-outline">S</div>
+<div class="text-outline">S</div>
+</div>
+<div class="grid grid-cols-7 gap-y-xs text-center">
+<div class="p-xs text-outline opacity-30">25</div>
+<div class="p-xs text-outline opacity-30">26</div>
+<div class="p-xs text-outline opacity-30">27</div>
+<div class="p-xs text-outline opacity-30">28</div>
+<div class="p-xs text-outline opacity-30">29</div>
+<div class="p-xs text-outline opacity-30">30</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">1</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">2</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">3</div>
+<div class="p-xs bg-secondary-container text-on-secondary-container rounded-lg font-bold">4</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">5</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">6</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">7</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">8</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">9</div>
+<div class="p-xs bg-primary text-on-primary rounded-lg font-bold">10</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">11</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">12</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">13</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">14</div>
+<div class="p-xs hover:bg-surface-container-high rounded-lg cursor-pointer">15</div>
+<!-- Current Day -->
+<div class="p-xs border-2 border-primary text-primary rounded-lg font-bold">24</div>
+</div>
+<div class="mt-lg pt-md border-t border-outline-variant space-y-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-xs">
+<span class="w-3 h-3 rounded-full bg-secondary"></span>
+<span class="text-label-sm">High Attendance (&gt;90%)</span>
+</div>
+<span class="text-label-sm font-bold text-on-surface">18 days</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-xs">
+<span class="w-3 h-3 rounded-full bg-tertiary-container"></span>
+<span class="text-label-sm">Average (75-90%)</span>
+</div>
+<span class="text-label-sm font-bold text-on-surface">4 days</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-xs">
+<span class="w-3 h-3 rounded-full bg-error"></span>
+<span class="text-label-sm">Low (&lt;75%)</span>
+</div>
+<span class="text-label-sm font-bold text-on-surface">0 days</span>
+</div>
+</div>
+</div>
+<!-- Additional Action Card -->
+<div class="bg-primary-container text-on-primary-container rounded-xl p-lg relative overflow-hidden">
+<div class="relative z-10">
+<h3 class="font-bold text-headline-sm mb-xs">Attendance Audit</h3>
+<p class="text-label-sm text-on-primary-container/80 mb-md">Review and finalize the attendance report for the last quarter.</p>
+<button class="bg-surface-container-lowest text-primary font-bold py-xs px-md rounded-lg text-label-md active:scale-95 transition-all">
+                                Open Audit Tool
+                            </button>
+</div>
+<span class="material-symbols-outlined absolute -right-4 -bottom-4 text-[120px] opacity-10 rotate-12">fact_check</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Micro-interactions for toggle buttons
+        document.querySelectorAll('input[type="radio"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                // Potential to send real-time update to server
+                const parentRow = e.target.closest('.group');
+                parentRow.classList.add('bg-primary/5');
+                setTimeout(() => parentRow.classList.remove('bg-primary/5'), 300);
+            });
+        });
+
+        // Search bar focus effect
+        const searchInput = document.querySelector('input[type="text"]');
+        searchInput.addEventListener('focus', () => {
+            searchInput.classList.add('w-80');
+        });
+        searchInput.addEventListener('blur', () => {
+            searchInput.classList.remove('w-80');
+        });
+    </script>
+</body></html>
