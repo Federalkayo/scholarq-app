@@ -1,7 +1,10 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Sidebar() {
+  const { logout } = useAuth();
+
   const navItems = [
     { path: '/', label: 'Dashboard', icon: 'dashboard' },
     { path: '/students', label: 'Students', icon: 'group' },
@@ -9,6 +12,11 @@ export default function Sidebar() {
     { path: '/fees', label: 'Fees', icon: 'payments' },
     { path: '/reports', label: 'Reports', icon: 'assessment' }
   ];
+
+  const handleLogout = async (e) => {
+    e.preventDefault();
+    await logout();
+  };
 
   return (
     <aside class="fixed left-0 top-0 h-full w-sidebar-width bg-surface-container-lowest border-r border-outline-variant flex flex-col p-md z-50">
@@ -70,11 +78,7 @@ export default function Sidebar() {
           )}
         </NavLink>
 
-        <a
-          href="#logout"
-          onClick={(e) => e.preventDefault()}
-          class="flex items-center gap-sm text-error hover:bg-surface-container-high px-md py-sm rounded-lg transition-colors"
-        >
+        <a href="#logout" onClick={handleLogout} class="flex items-center gap-sm text-error hover:bg-surface-container-high px-md py-sm rounded-lg transition-colors">
           <span class="material-symbols-outlined">logout</span>
           <span class="font-body-md text-body-md">Logout</span>
         </a>

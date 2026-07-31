@@ -1,9 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Topbar({ searchFilter, onSearchChange, selectedClass, onClassChange, selectedSection, onSectionChange }) {
   const location = useLocation();
   const isAttendancePage = location.pathname === '/attendance';
+  const { currentUser, userProfile, logout } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const displayName = userProfile?.email || currentUser?.email || 'Account';
+  const displayRole = userProfile?.role
+    ? userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)
+    : '';
+  const initial = displayName.charAt(0).toUpperCase();
+
+  const handleLogout = async () => {
+    await logout();
+  };
 
   return (
     <header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface-container-lowest border-b border-outline-variant flex justify-between items-center px-xl z-40">
@@ -66,16 +79,38 @@ export default function Topbar({ searchFilter, onSearchChange, selectedClass, on
           </button>
         </div>
         <div class="h-8 w-px bg-outline-variant"></div>
-        <div class="flex items-center gap-sm cursor-pointer group">
-          <div class="text-right hidden sm:block">
-            <p class="font-label-md text-on-surface font-bold leading-none">Dr. Sarah Jenkins</p>
-            <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-1">Principal</p>
-          </div>
-          <img
-            src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80"
-            alt="Dr. Sarah Jenkins"
-            class="w-10 h-10 rounded-full border-2 border-primary-fixed-dim object-cover"
-          />
+
+        <div class="relative">
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            class="flex items-center gap-sm cursor-pointer group"
+          >
+            <div class="text-right hidden sm:block">
+              <p class="font-label-md text-on-surface font-bold leading-none truncate max-w-[160px]">
+                {displayName}
+              </p>
+              {displayRole && (
+                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-1">
+                  {displayRole}
+                </p>
+              )}
+            </div>
+            <div class="w-10 h-10 rounded-full border-2 border-primary-fixed-dim bg-primary-fixed flex items-center justify-center font-bold text-primary">
+              {initial}
+            </div>
+          </button>
+
+          {menuOpen && (
+            <div class="absolute right-0 mt-2 w-44 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-lg py-1 z-50">
+              <button
+                onClick={handleLogout}
+                class="w-full text-left px-md py-2 text-label-md text-error hover:bg-error-container/40 flex items-center gap-xs"
+              >
+                <span class="material-symbols-outlined text-[18px]">logout</span>
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>
