@@ -1,22 +1,38 @@
-import React, { useEffect, useState } from 'react';
-import { mockSectionPerformance } from '../data/mockData';
+import React, { useEffect, useState, useMemo } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
+
+function getLast7Days() {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push({
+      iso: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString('en-US', { weekday: 'short' })
+    });
+  }
+  return days;
+}
+
+function normalizeLabel(str = '') {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
 
 export default function Reports() {
   const [animateBars, setAnimateBars] = useState(false);
+  const [students, setStudents] = useState([]);
+  const [fees, setFees] = useState([]);
+  const [weekAttendance, setWeekAttendance] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setAnimateBars(true), 150);
-    return () => clearTimeout(timer);
-  }, []);
+  const last7Days = useMemo(() => getLast7Days(), []);
+  const todayISO = last7Days[last7Days.length - 1].iso;
 
-  const weeklyTrend = [
-    { day: 'Mon', pct: '92%' },
-    { day: 'Tue', pct: '95%' },
-    { day: 'Wed', pct: '94%' },
-    { day: 'Thu', pct: '96%' },
-    { day: 'Fri', pct: '93%' }
-  ];
-
+  // NOTE: placeholder data — a real monthly trend needs fee invoices
+  // tagged with a `month` field over several months, which we've just
+  // started collecting. Swap this for a real computed trend once
+  // there are 2+ months of tagged data.
   const feeTrend = [
     { month: 'Aug', expected: '75%', collected: '65%', label: '$80k' },
     { month: 'Sep', expected: '85%', collected: '78%', label: '$95k' },
@@ -24,32 +40,88 @@ export default function Reports() {
     { month: 'Nov (Est)', expected: '100%', collected: '70%', label: '$140k (Est)' }
   ];
 
+  useEffect(() => {
+    const timer = setTimeout(() => setAnimateBars(true), 150);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
+      setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    });
+    const unsubFees = onSnapshot(collection(db, 'fees'), (snap) => {
+      setFees(snap.docs.map((d) => d.data()));
+    });
+    const q = query(collection(db, 'attendance'), where('date', 'in', last7Days.map((d) => d.iso)));
+    const unsubAttendance = onSnapshot(q, (snap) => {
+      setWeekAttendance(snap.docs.map((d) => d.data()));
+    });
+    return () => {
+      unsubStudents();
+      unsubFees();
+      unsubAttendance();
+    };
+  }, [last7Days]);
+
+  const totalStudents = students.length;
+
+  const weeklyTrend = last7Days.map((day) => {
+    const dayRecords = weekAttendance.filter((a) => a.date === day.iso);
+    const presentCount = dayRecords.filter((a) => a.status === 'Present').length;
+    const pct = totalStudents > 0 ? (presentCount / totalStudents) * 100 : 0;
+    return { day: day.label, pct: `${Math.round(pct)}%`, hasData: dayRecords.length > 0 };
+  });
+
+  const todayRecords = weekAttendance.filter((a) => a.date === todayISO);
+  const todayPresentCount = todayRecords.filter((a) => a.status === 'Present').length;
+  const todayRate = totalStudents > 0 ? Math.round((todayPresentCount / totalStudents) * 100) : 0;
+
+  const sectionRows = useMemo(() => {
+    const groups = {};
+    students.forEach((s) => {
+      const key = `${s.grade || 'Unassigned'} ${s.section || ''}`.trim();
+      if (!groups[key]) groups[key] = { section: key, students: [] };
+      groups[key].students.push(s);
+    });
+
+    return Object.values(groups).map((group) => {
+      const sectionStudentIds = group.students.map((s) => s.id);
+      const sectionToday = todayRecords.filter((a) => sectionStudentIds.includes(a.studentId));
+      const sectionPresent = sectionToday.filter((a) => a.status === 'Present').length;
+      const attendancePct =
+        group.students.length > 0 ? Math.round((sectionPresent / group.students.length) * 100) : 0;
+
+      const normalizedSection = normalizeLabel(group.section);
+      const sectionFees = fees.filter((f) => normalizeLabel(f.classSec) === normalizedSection);
+      const sectionCollected = sectionFees
+        .filter((f) => f.status === 'Paid')
+        .reduce((sum, f) => sum + (f.amount || 0), 0);
+      const sectionTotal = sectionFees.reduce((sum, f) => sum + (f.amount || 0), 0);
+      const feeCollectedPct = sectionTotal > 0 ? Math.round((sectionCollected / sectionTotal) * 100) : null;
+
+      return {
+        section: group.section,
+        studentCount: group.students.length,
+        attendancePct,
+        feeCollectedPct
+      };
+    });
+  }, [students, fees, todayRecords]);
+
   return (
     <div class="p-xl max-w-container-max mx-auto animate-fadeIn">
-      {/* Page Header */}
       <div class="mb-xl flex flex-wrap justify-between items-end gap-md">
         <div>
           <h2 class="font-display-lg text-display-lg text-primary">Reports & Analytics</h2>
           <p class="font-body-lg text-body-lg text-on-surface-variant">
-            Real-time institutional performance insights for the current term.
+            Live institutional data from Firestore.
           </p>
-        </div>
-        <div class="flex gap-md">
-          <button class="flex items-center gap-xs px-md py-sm border border-outline text-on-surface-variant rounded-lg font-label-md hover:bg-surface-container-high transition-all">
-            <span class="material-symbols-outlined text-[20px]">calendar_month</span>
-            Last 7 Days
-            <span class="material-symbols-outlined text-[18px]">expand_more</span>
-          </button>
-          <button class="flex items-center gap-xs px-md py-sm bg-primary text-on-primary rounded-lg font-label-md hover:opacity-90 transition-all shadow-sm">
-            <span class="material-symbols-outlined text-[20px]">download</span>
-            Export PDF
-          </button>
         </div>
       </div>
 
-      {/* Dashboard Layout (Bento Style) */}
       <div class="grid grid-cols-12 gap-lg">
-        {/* AI Summary Card (Spans 4 columns) */}
+        {/* AI Summary Card — honest placeholder until Gemini is wired */}
         <div class="col-span-12 lg:col-span-4 flex flex-col gap-lg">
           <div class="bg-primary text-on-primary rounded-xl p-lg shadow-sm relative overflow-hidden h-full flex flex-col justify-between hover-lift">
             <div class="absolute -right-8 -top-8 opacity-10 pointer-events-none">
@@ -59,72 +131,59 @@ export default function Reports() {
             </div>
             <div class="relative z-10">
               <div class="flex items-center gap-xs mb-md">
-                <span class="material-symbols-outlined text-secondary-fixed animate-pulse">auto_awesome</span>
+                <span class="material-symbols-outlined text-secondary-fixed">auto_awesome</span>
                 <h3 class="font-label-sm text-label-sm uppercase tracking-widest text-on-primary-container font-bold">
                   Weekly Summary
                 </h3>
               </div>
               <h4 class="font-headline-md text-headline-md mb-sm text-white">AI Insights</h4>
-              <div class="space-y-md text-on-primary-container">
-                <div class="flex gap-md items-start bg-white/5 p-md rounded-lg">
-                  <span class="material-symbols-outlined text-secondary-fixed mt-1">trending_up</span>
-                  <p class="font-body-md text-body-md text-on-primary-container">
-                    <strong class="text-white">Attendance</strong> is up 2% from last week, reaching a seasonal high of 96.4%.
-                  </p>
-                </div>
-                <div class="flex gap-md items-start bg-white/5 p-md rounded-lg">
-                  <span class="material-symbols-outlined text-tertiary-fixed-dim mt-1">warning</span>
-                  <p class="font-body-md text-body-md text-on-primary-container">
-                    <strong class="text-white">Fees collection</strong> is lagging in Grade 8 (12% behind target). Follow-up reminders recommended.
-                  </p>
-                </div>
-                <div class="flex gap-md items-start bg-white/5 p-md rounded-lg">
-                  <span class="material-symbols-outlined text-secondary-fixed mt-1">bolt</span>
-                  <p class="font-body-md text-body-md text-on-primary-container">
-                    <strong class="text-white">New Registrations</strong> have increased by 5 since Monday, primarily in Primary Section.
-                  </p>
-                </div>
-              </div>
+              <p class="text-body-md text-on-primary-container/80 bg-white/5 p-md rounded-lg">
+                AI-generated insights aren't connected yet — this will summarize attendance, fees, and enrollment trends automatically once Gemini is wired in.
+              </p>
             </div>
-            <button class="mt-xl w-full border border-on-primary-container/30 text-white font-label-md py-sm rounded-lg hover:bg-white/10 active:scale-95 transition-all relative z-10">
-              Generate Full Report
+            <button
+              disabled
+              class="mt-xl w-full border border-on-primary-container/30 text-white/50 font-label-md py-sm rounded-lg cursor-not-allowed relative z-10"
+            >
+              Coming soon
             </button>
           </div>
         </div>
 
-        {/* Main Analytics Canvas (Spans 8 columns) */}
         <div class="col-span-12 lg:col-span-8 flex flex-col gap-lg">
-          {/* Weekly Attendance Trend Chart Card */}
+          {/* Weekly Attendance Trend — real */}
           <div class="bg-surface-container-lowest rounded-xl p-lg shadow-sm border border-outline-variant hover-lift">
             <div class="flex justify-between items-start mb-lg">
               <div>
                 <h3 class="font-headline-sm text-headline-sm text-primary">Weekly Attendance Trend</h3>
-                <p class="text-label-sm text-on-surface-variant font-medium">Daily average: 94.2%</p>
-              </div>
-              <div class="flex items-center gap-xs text-secondary font-label-md font-bold">
-                <span class="material-symbols-outlined text-[18px]">north</span>
-                2.4%
+                <p class="text-label-sm text-on-surface-variant font-medium">Today: {todayRate}%</p>
               </div>
             </div>
-            <div class="h-44 flex items-end justify-between gap-md relative border-b border-outline-variant px-4">
-              {weeklyTrend.map((t) => (
-                <div key={t.day} class="flex-1 flex flex-col items-center gap-sm h-full justify-end relative group">
-                  <div class="absolute -top-8 opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-on-primary text-xs px-2 py-1 rounded shadow-md pointer-events-none z-20">
-                    {t.pct}
+            {totalStudents === 0 ? (
+              <p class="text-on-surface-variant text-body-md py-lg text-center">
+                Add students first to see attendance trends.
+              </p>
+            ) : (
+              <div class="h-44 flex items-end justify-between gap-md relative border-b border-outline-variant px-4">
+                {weeklyTrend.map((t) => (
+                  <div key={t.day} class={`flex-1 flex flex-col items-center gap-sm h-full justify-end relative group ${!t.hasData ? 'opacity-40' : ''}`}>
+                    <div class="absolute -top-8 opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-on-primary text-xs px-2 py-1 rounded shadow-md pointer-events-none z-20">
+                      {t.hasData ? t.pct : 'No data'}
+                    </div>
+                    <div class="w-full max-w-[40px] bg-primary/10 rounded-t-lg relative overflow-hidden h-full flex items-end">
+                      <div
+                        class="w-full bg-primary rounded-t-lg transition-all duration-1000 ease-out"
+                        style={{ height: animateBars ? t.pct : '0%' }}
+                      ></div>
+                    </div>
+                    <span class="text-label-sm text-on-surface-variant font-bold">{t.day}</span>
                   </div>
-                  <div class="w-full max-w-[40px] bg-primary/10 rounded-t-lg relative overflow-hidden h-full flex items-end">
-                    <div
-                      class="w-full bg-primary rounded-t-lg transition-all duration-1000 ease-out"
-                      style={{ height: animateBars ? t.pct : '0%' }}
-                    ></div>
-                  </div>
-                  <span class="text-label-sm text-on-surface-variant font-bold">{t.day}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Fee Collection Trend Chart Card */}
+          {/* Fee Collection Trend — placeholder, matches Fees.jsx disclaimer */}
           <div class="bg-surface-container-lowest rounded-xl p-lg shadow-sm border border-outline-variant hover-lift">
             <div class="flex justify-between items-center mb-md">
               <h3 class="font-headline-sm text-headline-sm text-primary">Fee Collection Trend</h3>
@@ -154,35 +213,46 @@ export default function Reports() {
                 </div>
               ))}
             </div>
+            <p class="text-[11px] text-on-surface-variant mt-sm italic">
+              Trend chart uses placeholder data until we have fee history over time.
+            </p>
           </div>
 
-          {/* Sectional Performance Matrix */}
+          {/* Sectional Performance Matrix — real, grouped from live data */}
           <div class="bg-surface-container-lowest rounded-xl p-lg shadow-sm border border-outline-variant hover-lift">
             <h3 class="font-headline-sm text-headline-sm text-primary mb-md">Sectional Performance Matrix</h3>
-            <div class="overflow-x-auto">
-              <table class="w-full text-left border-collapse">
-                <thead>
-                  <tr class="bg-surface-container-low border-b border-outline-variant">
-                    <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Section</th>
-                    <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Students</th>
-                    <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Attendance</th>
-                    <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Pass Rate</th>
-                    <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Fee Collection</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-outline-variant/30">
-                  {mockSectionPerformance.map((row) => (
-                    <tr key={row.section} class="hover:bg-surface-container-low transition-colors">
-                      <td class="px-md py-sm font-body-md text-on-surface font-bold">{row.section}</td>
-                      <td class="px-md py-sm font-body-md text-on-surface-variant">{row.students}</td>
-                      <td class="px-md py-sm font-body-md text-secondary font-bold">{row.attendance}</td>
-                      <td class="px-md py-sm font-body-md text-on-surface">{row.passRate}</td>
-                      <td class="px-md py-sm font-body-md text-on-surface font-bold">{row.feeCollected}</td>
+            {loading ? (
+              <p class="text-on-surface-variant text-body-md py-lg text-center">Loading…</p>
+            ) : sectionRows.length === 0 ? (
+              <p class="text-on-surface-variant text-body-md py-lg text-center">No students yet.</p>
+            ) : (
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-surface-container-low border-b border-outline-variant">
+                      <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Section</th>
+                      <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Students</th>
+                      <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Attendance (Today)</th>
+                      <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Pass Rate</th>
+                      <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Fee Collection</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody class="divide-y divide-outline-variant/30">
+                    {sectionRows.map((row) => (
+                      <tr key={row.section} class="hover:bg-surface-container-low transition-colors">
+                        <td class="px-md py-sm font-body-md text-on-surface font-bold">{row.section}</td>
+                        <td class="px-md py-sm font-body-md text-on-surface-variant">{row.studentCount}</td>
+                        <td class="px-md py-sm font-body-md text-secondary font-bold">{row.attendancePct}%</td>
+                        <td class="px-md py-sm font-body-md text-on-surface-variant italic">Not tracked yet</td>
+                        <td class="px-md py-sm font-body-md text-on-surface font-bold">
+                          {row.feeCollectedPct === null ? '—' : `${row.feeCollectedPct}%`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>
