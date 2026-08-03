@@ -1,18 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
 
 function getInitials(name = '') {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
-    .join('');
+  return name.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
 }
+
+const GRADE_OPTIONS = [
+  'Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5',
+  'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'
+];
+const SECTION_OPTIONS = ['Section A', 'Section B', 'Section C', 'Section D'];
+
+const emptyForm = {
+  name: '',
+  grade: GRADE_OPTIONS[4],
+  section: SECTION_OPTIONS[0],
+  guardian: '',
+  guardianContact: '',
+  feeStatus: 'Pending',
+  attendance: ''
+};
 
 export default function Students() {
   const { searchQuery } = useOutletContext();
@@ -20,6 +31,12 @@ export default function Students() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState('add');
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -48,9 +65,18 @@ export default function Students() {
         setLoading(false);
       }
     );
-
     return unsubscribe;
   }, []);
+
+  // Close modal on Escape
+  useEffect(() => {
+    if (!showModal) return;
+    const handleKey = (e) => {
+      if (e.key === 'Escape') closeModal();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showModal]);
 
   const filteredStudents = students.filter((s) => {
     if (!searchQuery) return true;
@@ -69,6 +95,76 @@ export default function Students() {
       ? (students.reduce((sum, s) => sum + s.attendance, 0) / totalStudents).toFixed(1)
       : '0.0';
   const overdueCount = students.filter((s) => s.feeStatus === 'Overdue').length;
+
+  const openAddModal = () => {
+    setForm(emptyForm);
+    setModalMode('add');
+    setSaveError('');
+    setShowModal(true);
+  };
+
+  const openEditModal = (student) => {
+    setForm({
+      id: student.id,
+      name: student.name,
+      grade: student.grade || GRADE_OPTIONS[4],
+      section: student.section || SECTION_OPTIONS[0],
+      guardian: student.guardian,
+      guardianContact: student.guardianContact,
+      feeStatus: student.feeStatus,
+      attendance: student.attendance
+    });
+    setModalMode('edit');
+    setSaveError('');
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setForm(emptyForm);
+    setSaveError('');
+  };
+
+  const handleFormChange = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) {
+      setSaveError('Student name is required.');
+      return;
+    }
+    setSaving(true);
+    setSaveError('');
+
+    const payload = {
+      name: form.name.trim(),
+      grade: form.grade,
+      section: form.section,
+      guardian: form.guardian.trim(),
+      guardianContact: form.guardianContact.trim(),
+      feeStatus: form.feeStatus,
+      attendance: form.attendance === '' ? 0 : Number(form.attendance)
+    };
+
+    try {
+      if (modalMode === 'add') {
+        await addDoc(collection(db, 'students'), payload);
+      } else {
+        await updateDoc(doc(db, 'students', form.id), payload);
+        if (selectedStudent && selectedStudent.id === form.id) {
+          setSelectedStudent({ ...selectedStudent, ...payload, initials: getInitials(payload.name) });
+        }
+      }
+      closeModal();
+    } catch (err) {
+      console.error('Failed to save student:', err);
+      setSaveError('Could not save. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div class="p-xl max-w-container-max mx-auto relative">
@@ -89,43 +185,33 @@ export default function Students() {
             <span class="material-symbols-outlined text-[20px]">file_download</span>
             Export CSV
           </button>
+          <button
+            onClick={openAddModal}
+            class="flex items-center gap-xs px-md py-2 bg-primary text-on-primary rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm"
+          >
+            <span class="material-symbols-outlined text-[20px]">person_add</span>
+            Add Student
+          </button>
         </div>
       </div>
 
-      {/* Stats Overview (Bento Style) */}
+      {/* Stats Overview */}
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-lg mb-xl">
         <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">
-            Total Enrollment
-          </p>
-          <div class="flex items-end justify-between">
-            <span class="font-display-lg text-display-lg text-on-surface">{totalStudents}</span>
-          </div>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Total Enrollment</p>
+          <span class="font-display-lg text-display-lg text-on-surface">{totalStudents}</span>
         </div>
         <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">
-            Avg Attendance
-          </p>
-          <div class="flex items-end justify-between">
-            <span class="font-display-lg text-display-lg text-on-surface">{avgAttendance}%</span>
-          </div>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Avg Attendance</p>
+          <span class="font-display-lg text-display-lg text-on-surface">{avgAttendance}%</span>
         </div>
         <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">
-            Overdue Fees
-          </p>
-          <div class="flex items-end justify-between">
-            <span class="font-display-lg text-display-lg text-error">{overdueCount}</span>
-          </div>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Overdue Fees</p>
+          <span class="font-display-lg text-display-lg text-error">{overdueCount}</span>
         </div>
         <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">
-            New Inquiries
-          </p>
-          <div class="flex items-end justify-between">
-            <span class="font-display-lg text-display-lg text-primary">—</span>
-            <span class="font-label-md text-label-md text-on-surface-variant">Not tracked yet</span>
-          </div>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">New Inquiries</p>
+          <span class="font-label-md text-label-md text-on-surface-variant">Not tracked yet</span>
         </div>
       </div>
 
@@ -137,7 +223,7 @@ export default function Students() {
           <div class="p-xl text-center text-error">{error}</div>
         ) : filteredStudents.length === 0 ? (
           <div class="p-xl text-center text-on-surface-variant">
-            {searchQuery ? 'No students match your search.' : 'No students yet. Add your first student in Firestore to see them here.'}
+            {searchQuery ? 'No students match your search.' : 'No students yet — click "Add Student" to get started.'}
           </div>
         ) : (
           <div class="overflow-x-auto">
@@ -191,8 +277,12 @@ export default function Students() {
                       </div>
                     </td>
                     <td class="px-lg py-md" onClick={(e) => e.stopPropagation()}>
-                      <button class="text-outline hover:text-primary transition-colors">
-                        <span class="material-symbols-outlined">more_vert</span>
+                      <button
+                        onClick={() => openEditModal(st)}
+                        class="text-outline hover:text-primary transition-colors"
+                        title="Edit student"
+                      >
+                        <span class="material-symbols-outlined">edit</span>
                       </button>
                     </td>
                   </tr>
@@ -205,8 +295,8 @@ export default function Students() {
 
       {/* Student Detail Slide-over Drawer */}
       {selectedStudent && (
-        <div class="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs">
-          <div class="w-full max-w-md bg-surface-container-lowest h-full shadow-2xl p-xl overflow-y-auto flex flex-col">
+        <div class="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs" onClick={() => setSelectedStudent(null)}>
+          <div class="w-full max-w-md bg-surface-container-lowest h-full shadow-2xl p-xl overflow-y-auto flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div class="flex justify-between items-center mb-lg">
               <h3 class="font-headline-sm text-primary">Student Profile</h3>
               <button
@@ -244,7 +334,10 @@ export default function Students() {
               </div>
             </div>
             <div class="mt-auto pt-lg flex gap-md">
-              <button class="flex-1 py-sm bg-primary text-on-primary rounded-lg font-label-md">
+              <button
+                onClick={() => openEditModal(selectedStudent)}
+                class="flex-1 py-sm bg-primary text-on-primary rounded-lg font-label-md"
+              >
                 Edit Record
               </button>
               <button class="flex-1 py-sm border border-outline-variant text-on-surface rounded-lg font-label-md">
@@ -252,6 +345,151 @@ export default function Students() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Add / Edit Modal */}
+      {showModal && (
+        <div
+          class="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 backdrop-blur-xs p-md overflow-y-auto pt-24"
+          onClick={closeModal}
+        >
+          <form
+            onSubmit={handleSave}
+            onClick={(e) => e.stopPropagation()}
+            class="w-full max-w-lg bg-surface-container-lowest rounded-xl shadow-2xl p-xl max-h-[90vh] overflow-y-auto"
+          >
+            <div class="flex items-center gap-md mb-lg">
+              <Avatar initials={getInitials(form.name) || '?'} size="w-14 h-14" />
+              <div class="flex-1">
+                <h3 class="font-headline-sm text-primary">
+                  {modalMode === 'add' ? 'Add Student' : 'Edit Student'}
+                </h3>
+                <p class="text-label-sm text-on-surface-variant">
+                  {modalMode === 'add' ? 'Enrolls a new student in the school.' : 'Updates this student\'s record.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeModal}
+                class="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full"
+              >
+                <span class="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {saveError && (
+              <div class="bg-error-container text-error text-label-md px-md py-sm rounded-lg mb-md">
+                {saveError}
+              </div>
+            )}
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-md">
+              <div class="sm:col-span-2">
+                <label class="block font-label-md text-on-surface-variant mb-xs">Full Name *</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => handleFormChange('name', e.target.value)}
+                  required
+                  autoFocus
+                  placeholder="e.g. Julian Thorne"
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Grade</label>
+                <select
+                  value={form.grade}
+                  onChange={(e) => handleFormChange('grade', e.target.value)}
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                >
+                  {GRADE_OPTIONS.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Section</label>
+                <select
+                  value={form.section}
+                  onChange={(e) => handleFormChange('section', e.target.value)}
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                >
+                  {SECTION_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Guardian Name</label>
+                <input
+                  type="text"
+                  value={form.guardian}
+                  onChange={(e) => handleFormChange('guardian', e.target.value)}
+                  placeholder="e.g. Sarah Thorne"
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Guardian Contact</label>
+                <input
+                  type="tel"
+                  value={form.guardianContact}
+                  onChange={(e) => handleFormChange('guardianContact', e.target.value)}
+                  placeholder="+1 (555) 123-4567"
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Fee Status</label>
+                <select
+                  value={form.feeStatus}
+                  onChange={(e) => handleFormChange('feeStatus', e.target.value)}
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                >
+                  <option value="Paid">Paid</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Overdue">Overdue</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Attendance %</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.attendance}
+                  onChange={(e) => handleFormChange('attendance', e.target.value)}
+                  placeholder="98"
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                />
+              </div>
+            </div>
+
+            <div class="flex gap-md mt-xl">
+              <button
+                type="submit"
+                disabled={saving}
+                class="flex-1 bg-primary text-on-primary py-sm rounded-lg font-label-md hover:opacity-90 transition-all disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : modalMode === 'add' ? 'Add Student' : 'Save Changes'}
+              </button>
+              <button
+                type="button"
+                onClick={closeModal}
+                class="flex-1 border border-outline-variant text-on-surface py-sm rounded-lg font-label-md"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
