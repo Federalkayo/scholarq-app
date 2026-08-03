@@ -4,6 +4,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
+import { computeFeeTrend } from '../utils/feeTrend';
 
 function formatCurrency(amount) {
   return `$${(amount || 0).toLocaleString()}`;
@@ -67,15 +68,9 @@ export default function Fees() {
     .filter((inv) => inv.status === 'Paid')
     .reduce((sum, inv) => sum + inv.amount, 0);
 
-  // NOTE: this is still placeholder trend data — a real monthly trend
-  // needs historical fee records over time, which we don't have yet.
-  const feeTrendData = [
-    { month: 'Jun', expectedHeight: '50%', collectedHeight: '40%', amount: '$80k' },
-    { month: 'Jul', expectedHeight: '65%', collectedHeight: '55%', amount: '$95k' },
-    { month: 'Aug', expectedHeight: '75%', collectedHeight: '65%', amount: '$110k' },
-    { month: 'Sep', expectedHeight: '88%', collectedHeight: '78%', amount: '$120k' },
-    { month: 'Oct', expectedHeight: '100%', collectedHeight: '88%', amount: '$124k' }
-  ];
+  // Real monthly trend, computed from each invoice's dueDate/amount/status.
+  const feeTrendData = computeFeeTrend(invoices, 5);
+  const hasAnyTrendData = feeTrendData.some((d) => d.hasData);
 
   const handleSendReminder = (id) => {
     // NOTE: this doesn't send anything real yet — it's UI feedback only.
@@ -139,29 +134,38 @@ export default function Fees() {
               </span>
             </div>
           </div>
-          <div class="h-40 relative flex items-end justify-between gap-4 group border-b border-outline-variant px-4 pt-4">
-            {feeTrendData.map((d) => (
-              <div key={d.month} class="flex-1 flex flex-col items-center gap-sm h-full justify-end relative group/bar">
-                <div class="absolute -top-8 opacity-0 group-hover/bar:opacity-100 transition-opacity bg-primary text-on-primary text-xs px-2 py-1 rounded shadow-md pointer-events-none z-20">
-                  {d.amount}
-                </div>
-                <div class="w-full max-w-[48px] bg-primary/20 rounded-t-md relative h-full flex items-end overflow-hidden">
-                  <div
-                    class="w-full bg-primary rounded-t-md transition-all duration-1000 ease-out absolute bottom-0"
-                    style={{ height: animateBars ? d.expectedHeight : '0%' }}
-                  >
-                    <div
-                      class="w-full bg-secondary rounded-t-md transition-all duration-1000 ease-out absolute bottom-0"
-                      style={{ height: animateBars ? d.collectedHeight : '0%' }}
-                    ></div>
+          {!hasAnyTrendData ? (
+            <p class="text-on-surface-variant text-body-md py-lg text-center">
+              No invoices with due dates in the last 5 months yet.
+            </p>
+          ) : (
+            <div class="h-40 relative flex items-end justify-between gap-4 group border-b border-outline-variant px-4 pt-4">
+              {feeTrendData.map((d) => (
+                <div
+                  key={d.month}
+                  class={`flex-1 flex flex-col items-center gap-sm h-full justify-end relative group/bar ${!d.hasData ? 'opacity-40' : ''}`}
+                >
+                  <div class="absolute -top-8 opacity-0 group-hover/bar:opacity-100 transition-opacity bg-primary text-on-primary text-xs px-2 py-1 rounded shadow-md pointer-events-none z-20 whitespace-nowrap">
+                    {d.hasData ? d.amount : 'No data'}
                   </div>
+                  <div class="w-full max-w-[48px] bg-primary/20 rounded-t-md relative h-full flex items-end overflow-hidden">
+                    <div
+                      class="w-full bg-primary rounded-t-md transition-all duration-1000 ease-out absolute bottom-0"
+                      style={{ height: animateBars ? d.expectedHeight : '0%' }}
+                    >
+                      <div
+                        class="w-full bg-secondary rounded-t-md transition-all duration-1000 ease-out absolute bottom-0"
+                        style={{ height: animateBars ? d.collectedHeight : '0%' }}
+                      ></div>
+                    </div>
+                  </div>
+                  <span class="text-xs text-on-surface-variant font-bold">{d.month}</span>
                 </div>
-                <span class="text-xs text-on-surface-variant font-bold">{d.month}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
           <p class="text-[11px] text-on-surface-variant mt-sm italic">
-            Trend chart uses placeholder data until we have fee history over time.
+            Live trend from invoice due dates and payment status.
           </p>
         </div>
       </div>
