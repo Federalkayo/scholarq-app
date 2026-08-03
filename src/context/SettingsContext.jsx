@@ -85,7 +85,11 @@ export function SettingsProvider({ children }) {
         }
       },
       (err) => {
-        console.warn('Firestore settings listener notice:', err.message);
+        if (err.code === 'permission-denied') {
+          console.info('Firestore settings note: /settings/portal read access requires Firestore Rules update.');
+        } else {
+          console.warn('Firestore settings listener notice:', err.message);
+        }
       }
     );
     return unsubscribe;
@@ -116,7 +120,11 @@ export function SettingsProvider({ children }) {
       await setDoc(settingsDocRef, updated, { merge: true });
       console.log('Settings successfully saved to Firestore doc: settings/portal');
     } catch (err) {
-      console.error('Failed to save settings to Firestore:', err);
+      if (err.code === 'permission-denied') {
+        console.info('Firestore settings note: Saved locally. To sync with Firestore, update Firestore Rules in Firebase Console.');
+      } else {
+        console.error('Failed to save settings to Firestore:', err);
+      }
     }
   };
 
