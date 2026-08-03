@@ -3,6 +3,7 @@ import { useOutletContext, useLocation, useSearchParams } from 'react-router-dom
 import { collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { uploadFileToStorage } from '../utils/storage';
+import { generateReportComment } from '../lib/groq';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
 
@@ -43,6 +44,12 @@ export default function Students() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // AI report card comment state
+  const [aiComment, setAiComment] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiCopied, setAiCopied] = useState(false);
 
   useEffect(() => {
     if (location.state?.openNewRegistration || searchParams.get('register') === 'true') {
@@ -88,7 +95,6 @@ export default function Students() {
     return unsubscribe;
   }, []);
 
-  // Close modal on Escape
   useEffect(() => {
     if (!showModal) return;
     const handleKey = (e) => {
@@ -97,6 +103,12 @@ export default function Students() {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [showModal]);
+
+  useEffect(() => {
+    setAiComment('');
+    setAiError('');
+    setAiCopied(false);
+  }, [selectedStudent]);
 
   const filteredStudents = students.filter((s) => {
     if (!searchQuery) return true;
@@ -218,9 +230,34 @@ export default function Students() {
     }
   };
 
+  const handleGenerateComment = async () => {
+    if (!selectedStudent) return;
+    setAiLoading(true);
+    setAiError('');
+    setAiCopied(false);
+    try {
+      const comment = await generateReportComment(selectedStudent);
+      setAiComment(comment);
+    } catch (err) {
+      console.error('Failed to generate AI comment:', err);
+      setAiError('Could not generate a comment right now. Please try again.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleCopyComment = async () => {
+    try {
+      await navigator.clipboard.writeText(aiComment);
+      setAiCopied(true);
+      setTimeout(() => setAiCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   return (
     <div class="p-xl max-w-container-max mx-auto relative">
-      {/* Page Header */}
       <div class="flex flex-wrap justify-between items-end mb-lg gap-md">
         <div>
           <h2 class="font-display-lg text-display-lg text-primary">Student Management</h2>
@@ -247,7 +284,6 @@ export default function Students() {
         </div>
       </div>
 
-      {/* Stats Overview */}
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-lg mb-xl">
         <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
           <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Total Enrollment</p>
@@ -267,7 +303,6 @@ export default function Students() {
         </div>
       </div>
 
-      {/* Student Data Table */}
       <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/30 overflow-hidden">
         {loading ? (
           <div class="p-xl text-center text-on-surface-variant">Loading students…</div>
@@ -345,7 +380,6 @@ export default function Students() {
         )}
       </div>
 
-      {/* Student Detail Slide-over Drawer */}
       {selectedStudent && (
         <div class="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs" onClick={() => setSelectedStudent(null)}>
           <div class="w-full max-w-md bg-surface-container-lowest h-full shadow-2xl p-xl overflow-y-auto flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -400,7 +434,74 @@ export default function Students() {
                 <span class="font-bold text-on-surface">{selectedStudent.attendance}%</span>
               </div>
             </div>
-            <div class="mt-auto pt-lg flex gap-md">
+
+            <div class="mt-lg pt-md border-t border-outline-variant">
+              <div class="flex items-center justify-between mb-sm">
+                <h4 class="font-label-md text-on-surface-variant flex items-center gap-xs">
+                  <span class="material-symbols-outlined text-[18px] text-primary">auto_awesome</span>
+                  AI Report Card Comment
+                </h4>
+              </div>
+
+              {aiError && (
+                <div class="bg-error-container text-error text-label-sm px-md py-sm rounded-lg mb-sm">
+                  {aiError}
+                </div>
+              )}
+
+              {aiComment ? (
+                <div>
+                  <textarea
+                    value={aiComment}
+                    onChange={(e) => setAiComment(e.target.value)}
+                    rows={4}
+                    class="w-full border border-outline-variant rounded-lg px-md py-sm text-body-md text-on-surface bg-surface outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
+                  />
+                  <div class="flex gap-sm mt-sm">
+                    <button
+                      onClick={handleCopyComment}
+                      class="flex-1 flex items-center justify-center gap-xs py-1.5 border border-outline-variant text-on-surface rounded-lg font-label-sm hover:bg-surface-container-high transition-colors"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">
+                        {aiCopied ? 'check' : 'content_copy'}
+                      </span>
+                      {aiCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                    <button
+                      onClick={handleGenerateComment}
+                      disabled={aiLoading}
+                      class="flex-1 flex items-center justify-center gap-xs py-1.5 border border-outline-variant text-on-surface rounded-lg font-label-sm hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">refresh</span>
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={handleGenerateComment}
+                  disabled={aiLoading}
+                  class="w-full flex items-center justify-center gap-xs py-2 bg-primary/10 text-primary rounded-lg font-label-md hover:bg-primary/20 transition-colors disabled:opacity-50"
+                >
+                  {aiLoading ? (
+                    <>
+                      <span class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"></span>
+                      Generating…
+                    </>
+                  ) : (
+                    <>
+                      <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                      Generate Comment
+                    </>
+                  )}
+                </button>
+              )}
+              <p class="text-[11px] text-on-surface-variant mt-xs italic">
+                AI-generated draft based on attendance data — always review before use.
+              </p>
+            </div>
+
+            <div class="mt-lg pt-lg flex gap-md">
               <button
                 onClick={() => openEditModal(selectedStudent)}
                 class="flex-1 py-sm bg-primary text-on-primary rounded-lg font-label-md hover:opacity-90 transition-opacity"
@@ -415,7 +516,6 @@ export default function Students() {
         </div>
       )}
 
-      {/* Add / Edit Modal */}
       {showModal && (
         <div
           class="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 backdrop-blur-xs p-md overflow-y-auto pt-24"
@@ -448,7 +548,7 @@ export default function Students() {
                   {modalMode === 'add' ? 'Add Student' : 'Edit Student'}
                 </h3>
                 <p class="text-label-sm text-on-surface-variant">
-                  {modalMode === 'add' ? 'Enrolls a new student in the school.' : 'Updates this student\'s record.'}
+                  {modalMode === 'add' ? 'Enrolls a new student in the school.' : "Updates this student's record."}
                 </p>
               </div>
               <button
