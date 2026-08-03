@@ -22,9 +22,9 @@ export default function Settings() {
     setTheme(settings.theme);
   }, [settings]);
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     if (e) e.preventDefault();
-    saveSettings({
+    await saveSettings({
       profileData,
       schoolData,
       notifications,

@@ -91,40 +91,37 @@ export function SettingsProvider({ children }) {
     return unsubscribe;
   }, []);
 
-  const saveSettings = (newSettingsPartial) => {
-    setSettings((prev) => {
-      const updated = {
-        profileData: { ...prev.profileData, ...(newSettingsPartial?.profileData || {}) },
-        schoolData: { ...prev.schoolData, ...(newSettingsPartial?.schoolData || {}) },
-        notifications: { ...prev.notifications, ...(newSettingsPartial?.notifications || {}) },
-        security: { ...prev.security, ...(newSettingsPartial?.security || {}) },
-        theme: { ...prev.theme, ...(newSettingsPartial?.theme || {}) }
-      };
+  const saveSettings = async (newSettingsPartial) => {
+    const updated = {
+      profileData: { ...settings.profileData, ...(newSettingsPartial?.profileData || {}) },
+      schoolData: { ...settings.schoolData, ...(newSettingsPartial?.schoolData || {}) },
+      notifications: { ...settings.notifications, ...(newSettingsPartial?.notifications || {}) },
+      security: { ...settings.security, ...(newSettingsPartial?.security || {}) },
+      theme: { ...settings.theme, ...(newSettingsPartial?.theme || {}) }
+    };
 
-      // 1. Save to local storage for instant offline availability
-      try {
-        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(updated));
-      } catch (e) {
-        console.error('Failed to save settings to localStorage', e);
-      }
+    // 1. Update React state instantly for responsive UI
+    setSettings(updated);
 
-      // 2. Persist to Cloud Firestore
-      try {
-        const settingsDocRef = doc(db, 'settings', 'portal');
-        setDoc(settingsDocRef, updated, { merge: true }).catch((err) => {
-          console.warn('Firestore sync notice:', err.message);
-        });
-      } catch (err) {
-        console.warn('Could not sync settings to Firestore:', err);
-      }
+    // 2. Save to local storage
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save settings to localStorage:', e);
+    }
 
-      return updated;
-    });
+    // 3. Persist to Cloud Firestore doc: settings/portal
+    try {
+      const settingsDocRef = doc(db, 'settings', 'portal');
+      await setDoc(settingsDocRef, updated, { merge: true });
+      console.log('Settings successfully saved to Firestore doc: settings/portal');
+    } catch (err) {
+      console.error('Failed to save settings to Firestore:', err);
+    }
   };
 
   /**
-   * Uploads an avatar image to Firebase Storage and returns the public download URL.
-   * Fallbacks gracefully to Data URL if storage bucket is inaccessible/restricted.
+   * Uploads an avatar image to Firebase Storage and saves the URL to Firestore & state.
    */
   const updateAvatar = async (file) => {
     if (!file) return null;
@@ -137,8 +134,8 @@ export function SettingsProvider({ children }) {
       // 2. Obtain download URL
       const downloadUrl = await getDownloadURL(snapshot.ref);
 
-      // 3. Save download URL to settings
-      saveSettings({
+      // 3. Save download URL to settings in Firestore and local state
+      await saveSettings({
         profileData: { ...settings.profileData, avatar: downloadUrl }
       });
 
@@ -146,12 +143,11 @@ export function SettingsProvider({ children }) {
     } catch (firebaseError) {
       console.warn('Firebase Storage upload notice (falling back to DataURL):', firebaseError);
 
-      // Resilient fallback to local DataURL if Firebase Storage rules block upload
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
           const dataUrl = e.target.result;
-          saveSettings({
+          await saveSettings({
             profileData: { ...settings.profileData, avatar: dataUrl }
           });
           resolve(dataUrl);
