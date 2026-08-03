@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useSettings } from '../../context/SettingsContext';
 
 export default function Topbar({ searchFilter, onSearchChange, selectedClass, onClassChange, selectedSection, onSectionChange }) {
   const location = useLocation();
   const isAttendancePage = location.pathname === '/attendance';
   const { currentUser, userProfile, logout } = useAuth();
+  const { settings } = useSettings();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const displayName = userProfile?.email || currentUser?.email || 'Account';
-  const displayRole = userProfile?.role
+  const profile = settings?.profileData;
+  const displayName = profile?.name || userProfile?.email || currentUser?.email || 'Account';
+  const displayRole = profile?.title || (userProfile?.role
     ? userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)
-    : '';
+    : 'Principal');
   const initial = displayName.charAt(0).toUpperCase();
 
   const handleLogout = async () => {
@@ -95,9 +98,17 @@ export default function Topbar({ searchFilter, onSearchChange, selectedClass, on
                 </p>
               )}
             </div>
-            <div class="w-10 h-10 rounded-full border-2 border-primary-fixed-dim bg-primary-fixed flex items-center justify-center font-bold text-primary">
-              {initial}
-            </div>
+            {profile?.avatar ? (
+              <img
+                src={profile.avatar}
+                alt={displayName}
+                class="w-10 h-10 rounded-full object-cover border-2 border-primary-fixed-dim"
+              />
+            ) : (
+              <div class="w-10 h-10 rounded-full border-2 border-primary-fixed-dim bg-primary-fixed flex items-center justify-center font-bold text-primary">
+                {initial}
+              </div>
+            )}
           </button>
 
           {menuOpen && (

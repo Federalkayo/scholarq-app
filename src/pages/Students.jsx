@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useLocation, useSearchParams } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { uploadFileToStorage } from '../utils/storage';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
 
@@ -22,11 +23,15 @@ const emptyForm = {
   guardian: '',
   guardianContact: '',
   feeStatus: 'Pending',
-  attendance: ''
+  attendance: '',
+  avatar: ''
 };
 
 export default function Students() {
   const { searchQuery } = useOutletContext();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +42,20 @@ export default function Students() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  useEffect(() => {
+    if (location.state?.openNewRegistration || searchParams.get('register') === 'true') {
+      setForm(emptyForm);
+      setModalMode('add');
+      setSaveError('');
+      setShowModal(true);
+      if (searchParams.get('register')) {
+        searchParams.delete('register');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [location.state, searchParams]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -53,6 +72,7 @@ export default function Students() {
             guardianContact: data.guardianContact || '',
             feeStatus: data.feeStatus || 'Pending',
             attendance: typeof data.attendance === 'number' ? data.attendance : 0,
+            avatar: data.avatar || '',
             initials: getInitials(data.name)
           };
         });
@@ -112,7 +132,8 @@ export default function Students() {
       guardian: student.guardian,
       guardianContact: student.guardianContact,
       feeStatus: student.feeStatus,
-      attendance: student.attendance
+      attendance: student.attendance,
+      avatar: student.avatar || ''
     });
     setModalMode('edit');
     setSaveError('');
@@ -127,6 +148,36 @@ export default function Students() {
 
   const handleFormChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleStudentAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const url = await uploadFileToStorage(file, 'student-avatars');
+      setForm((prev) => ({ ...prev, avatar: url }));
+    } catch (err) {
+      console.error('Failed to upload student image:', err);
+      setSaveError('Failed to upload picture. Please try again.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleDrawerAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedStudent) return;
+    setUploadingImage(true);
+    try {
+      const url = await uploadFileToStorage(file, 'student-avatars');
+      await updateDoc(doc(db, 'students', selectedStudent.id), { avatar: url });
+      setSelectedStudent((prev) => ({ ...prev, avatar: url }));
+    } catch (err) {
+      console.error('Failed to update student profile picture:', err);
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const handleSave = async (e) => {
@@ -145,7 +196,8 @@ export default function Students() {
       guardian: form.guardian.trim(),
       guardianContact: form.guardianContact.trim(),
       feeStatus: form.feeStatus,
-      attendance: form.attendance === '' ? 0 : Number(form.attendance)
+      attendance: form.attendance === '' ? 0 : Number(form.attendance),
+      avatar: form.avatar || ''
     };
 
     try {
@@ -247,7 +299,7 @@ export default function Students() {
                   >
                     <td class="px-lg py-md">
                       <div class="flex items-center gap-md">
-                        <Avatar initials={st.initials} alt={st.name} />
+                        <Avatar src={st.avatar} initials={st.initials} alt={st.name} />
                         <div>
                           <p class="font-body-md text-body-md text-on-surface font-semibold">{st.name}</p>
                           <p class="text-xs text-on-surface-variant">ID: {st.id.slice(0, 8)}</p>
@@ -307,7 +359,22 @@ export default function Students() {
               </button>
             </div>
             <div class="text-center mb-lg">
-              <Avatar initials={selectedStudent.initials} size="w-24 h-24" border="mx-auto mb-md border-4 border-primary-fixed" />
+              <div class="relative inline-block mx-auto mb-md group">
+                <Avatar src={selectedStudent.avatar} initials={selectedStudent.initials} size="w-24 h-24" border="border-4 border-primary-fixed" />
+                <label
+                  title="Update profile picture"
+                  class="absolute bottom-0 right-0 bg-primary text-on-primary p-2 rounded-full shadow-md hover:scale-110 transition-all cursor-pointer flex items-center justify-center"
+                >
+                  <span class="material-symbols-outlined text-[16px]">{uploadingImage ? 'sync' : 'photo_camera'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleDrawerAvatarUpload}
+                    class="hidden"
+                    disabled={uploadingImage}
+                  />
+                </label>
+              </div>
               <h4 class="font-headline-md text-on-surface">{selectedStudent.name}</h4>
               <p class="text-body-md text-on-surface-variant">{selectedStudent.id.slice(0, 8)}</p>
             </div>
@@ -336,11 +403,11 @@ export default function Students() {
             <div class="mt-auto pt-lg flex gap-md">
               <button
                 onClick={() => openEditModal(selectedStudent)}
-                class="flex-1 py-sm bg-primary text-on-primary rounded-lg font-label-md"
+                class="flex-1 py-sm bg-primary text-on-primary rounded-lg font-label-md hover:opacity-90 transition-opacity"
               >
                 Edit Record
               </button>
-              <button class="flex-1 py-sm border border-outline-variant text-on-surface rounded-lg font-label-md">
+              <button class="flex-1 py-sm border border-outline-variant text-on-surface rounded-lg font-label-md hover:bg-surface-container-high transition-colors">
                 Contact Guardian
               </button>
             </div>
@@ -360,7 +427,22 @@ export default function Students() {
             class="w-full max-w-lg bg-surface-container-lowest rounded-xl shadow-2xl p-xl max-h-[90vh] overflow-y-auto"
           >
             <div class="flex items-center gap-md mb-lg">
-              <Avatar initials={getInitials(form.name) || '?'} size="w-14 h-14" />
+              <div class="relative group">
+                <Avatar src={form.avatar} initials={getInitials(form.name) || '?'} size="w-16 h-16" />
+                <label
+                  title="Upload student picture"
+                  class="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center cursor-pointer opacity-80 hover:opacity-100 transition-opacity"
+                >
+                  <span class="material-symbols-outlined text-white text-[20px]">{uploadingImage ? 'sync' : 'photo_camera'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleStudentAvatarUpload}
+                    class="hidden"
+                    disabled={uploadingImage}
+                  />
+                </label>
+              </div>
               <div class="flex-1">
                 <h3 class="font-headline-sm text-primary">
                   {modalMode === 'add' ? 'Add Student' : 'Edit Student'}
@@ -476,7 +558,7 @@ export default function Students() {
             <div class="flex gap-md mt-xl">
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || uploadingImage}
                 class="flex-1 bg-primary text-on-primary py-sm rounded-lg font-label-md hover:opacity-90 transition-all disabled:opacity-50"
               >
                 {saving ? 'Saving…' : modalMode === 'add' ? 'Add Student' : 'Save Changes'}

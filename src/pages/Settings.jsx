@@ -1,47 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useSettings } from '../context/SettingsContext';
 
 export default function Settings() {
+  const { settings, saveSettings, updateAvatar, exportDatabaseBackup } = useSettings();
   const [activeTab, setActiveTab] = useState('profile');
   const [savedNotice, setSavedNotice] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Form State
-  const [profileData, setProfileData] = useState({
-    name: 'Dr. Sarah Jenkins',
-    email: 's.jenkins@eduadmin.edu',
-    title: 'Principal & Chief Administrator',
-    phone: '+1 (555) 019-2834',
-    bio: 'Overseeing academic excellence and administrative operations for Academic Year 2023-24.'
-  });
+  const [profileData, setProfileData] = useState(settings.profileData);
+  const [schoolData, setSchoolData] = useState(settings.schoolData);
+  const [notifications, setNotifications] = useState(settings.notifications);
+  const [security, setSecurity] = useState(settings.security);
+  const [theme, setTheme] = useState(settings.theme);
 
-  const [schoolData, setSchoolData] = useState({
-    schoolName: 'EduAdmin Academy & High School',
-    academicYear: '2023-2024',
-    address: '742 Evergreen Terrace, Springfield',
-    emergencyPhone: '+1 (555) 911-0000',
-    contactEmail: 'admin@eduadmin.edu'
-  });
-
-  const [notifications, setNotifications] = useState({
-    attendanceDigest: true,
-    feeAlerts: true,
-    emergencySms: true,
-    weeklyReportEmail: false
-  });
-
-  const [security, setSecurity] = useState({
-    twoFactor: true,
-    sessionTimeout: '30m'
-  });
-
-  const [theme, setTheme] = useState({
-    darkMode: false,
-    compactTable: false
-  });
+  useEffect(() => {
+    setProfileData(settings.profileData);
+    setSchoolData(settings.schoolData);
+    setNotifications(settings.notifications);
+    setSecurity(settings.security);
+    setTheme(settings.theme);
+  }, [settings]);
 
   const handleSave = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    saveSettings({
+      profileData,
+      schoolData,
+      notifications,
+      security,
+      theme
+    });
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 3000);
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const dataUrl = await updateAvatar(file);
+      if (dataUrl) {
+        setProfileData((prev) => ({ ...prev, avatar: dataUrl }));
+        setSavedNotice(true);
+        setTimeout(() => setSavedNotice(false), 3000);
+      }
+    }
+  };
+
+  const handleNotificationToggle = (key, value) => {
+    const updated = { ...notifications, [key]: value };
+    setNotifications(updated);
+    saveSettings({ notifications: updated });
+  };
+
+  const handleSecurityChange = (key, value) => {
+    const updated = { ...security, [key]: value };
+    setSecurity(updated);
+    saveSettings({ security: updated });
+  };
+
+  const handleThemeToggle = (key, value) => {
+    const updated = { ...theme, [key]: value };
+    setTheme(updated);
+    saveSettings({ theme: updated });
   };
 
   const tabs = [
@@ -72,7 +97,7 @@ export default function Settings() {
         </div>
         <button
           onClick={handleSave}
-          class="bg-secondary text-on-secondary px-lg py-sm rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm flex items-center gap-xs"
+          class="bg-secondary text-on-secondary px-lg py-sm rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm flex items-center gap-xs cursor-pointer"
         >
           <span class="material-symbols-outlined text-[20px]">save</span>
           Save Changes
@@ -87,7 +112,7 @@ export default function Settings() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              class={`flex items-center gap-xs px-lg py-md font-label-md transition-all border-b-2 whitespace-nowrap ${
+              class={`flex items-center gap-xs px-lg py-md font-label-md transition-all border-b-2 whitespace-nowrap cursor-pointer ${
                 isActive
                   ? 'border-primary text-primary font-bold bg-primary/5'
                   : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
@@ -111,16 +136,24 @@ export default function Settings() {
             <div class="flex items-center gap-lg">
               <div class="relative">
                 <img
-                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80"
+                  src={profileData.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'}
                   alt="Avatar"
                   class="w-20 h-20 rounded-full object-cover border-2 border-primary-fixed"
                 />
                 <button
                   type="button"
-                  class="absolute bottom-0 right-0 bg-primary text-on-primary p-1 rounded-full text-xs shadow-md hover:scale-105 transition-transform"
+                  onClick={handleAvatarClick}
+                  class="absolute bottom-0 right-0 bg-primary text-on-primary p-1 rounded-full text-xs shadow-md hover:scale-105 transition-transform cursor-pointer"
                 >
                   <span class="material-symbols-outlined text-[16px]">photo_camera</span>
                 </button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept="image/*"
+                  class="hidden"
+                />
               </div>
               <div>
                 <h4 class="font-headline-sm text-on-surface">{profileData.name}</h4>
@@ -135,7 +168,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="text"
-                  value={profileData.name}
+                  value={profileData.name || ''}
                   onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -146,7 +179,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="email"
-                  value={profileData.email}
+                  value={profileData.email || ''}
                   onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -157,7 +190,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="text"
-                  value={profileData.title}
+                  value={profileData.title || ''}
                   onChange={(e) => setProfileData({ ...profileData, title: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -168,7 +201,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="text"
-                  value={profileData.phone}
+                  value={profileData.phone || ''}
                   onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -181,7 +214,7 @@ export default function Settings() {
               </label>
               <textarea
                 rows="3"
-                value={profileData.bio}
+                value={profileData.bio || ''}
                 onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
                 class="w-full bg-surface-container-low border border-outline-variant rounded-lg p-md text-body-md focus:ring-2 focus:ring-primary outline-none"
               ></textarea>
@@ -202,7 +235,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="text"
-                  value={schoolData.schoolName}
+                  value={schoolData.schoolName || ''}
                   onChange={(e) => setSchoolData({ ...schoolData, schoolName: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -213,7 +246,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="text"
-                  value={schoolData.academicYear}
+                  value={schoolData.academicYear || ''}
                   onChange={(e) => setSchoolData({ ...schoolData, academicYear: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -224,7 +257,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="text"
-                  value={schoolData.address}
+                  value={schoolData.address || ''}
                   onChange={(e) => setSchoolData({ ...schoolData, address: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -235,7 +268,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="text"
-                  value={schoolData.emergencyPhone}
+                  value={schoolData.emergencyPhone || ''}
                   onChange={(e) => setSchoolData({ ...schoolData, emergencyPhone: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -246,7 +279,7 @@ export default function Settings() {
                 </label>
                 <input
                   type="email"
-                  value={schoolData.contactEmail}
+                  value={schoolData.contactEmail || ''}
                   onChange={(e) => setSchoolData({ ...schoolData, contactEmail: e.target.value })}
                   class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm text-body-md focus:ring-2 focus:ring-primary outline-none"
                 />
@@ -269,8 +302,8 @@ export default function Settings() {
                 </div>
                 <input
                   type="checkbox"
-                  checked={notifications.attendanceDigest}
-                  onChange={(e) => setNotifications({ ...notifications, attendanceDigest: e.target.checked })}
+                  checked={!!notifications.attendanceDigest}
+                  onChange={(e) => handleNotificationToggle('attendanceDigest', e.target.checked)}
                   class="w-5 h-5 accent-primary cursor-pointer"
                 />
               </div>
@@ -281,8 +314,8 @@ export default function Settings() {
                 </div>
                 <input
                   type="checkbox"
-                  checked={notifications.feeAlerts}
-                  onChange={(e) => setNotifications({ ...notifications, feeAlerts: e.target.checked })}
+                  checked={!!notifications.feeAlerts}
+                  onChange={(e) => handleNotificationToggle('feeAlerts', e.target.checked)}
                   class="w-5 h-5 accent-primary cursor-pointer"
                 />
               </div>
@@ -293,8 +326,8 @@ export default function Settings() {
                 </div>
                 <input
                   type="checkbox"
-                  checked={notifications.emergencySms}
-                  onChange={(e) => setNotifications({ ...notifications, emergencySms: e.target.checked })}
+                  checked={!!notifications.emergencySms}
+                  onChange={(e) => handleNotificationToggle('emergencySms', e.target.checked)}
                   class="w-5 h-5 accent-primary cursor-pointer"
                 />
               </div>
@@ -316,8 +349,8 @@ export default function Settings() {
                 </div>
                 <input
                   type="checkbox"
-                  checked={security.twoFactor}
-                  onChange={(e) => setSecurity({ ...security, twoFactor: e.target.checked })}
+                  checked={!!security.twoFactor}
+                  onChange={(e) => handleSecurityChange('twoFactor', e.target.checked)}
                   class="w-5 h-5 accent-primary cursor-pointer"
                 />
               </div>
@@ -326,9 +359,9 @@ export default function Settings() {
                   Session Idle Timeout
                 </label>
                 <select
-                  value={security.sessionTimeout}
-                  onChange={(e) => setSecurity({ ...security, sessionTimeout: e.target.value })}
-                  class="bg-surface-container-lowest border border-outline-variant rounded-lg px-md py-sm text-body-md outline-none text-on-surface"
+                  value={security.sessionTimeout || '30m'}
+                  onChange={(e) => handleSecurityChange('sessionTimeout', e.target.value)}
+                  class="bg-surface-container-lowest border border-outline-variant rounded-lg px-md py-sm text-body-md outline-none text-on-surface cursor-pointer"
                 >
                   <option value="15m">15 Minutes</option>
                   <option value="30m">30 Minutes</option>
@@ -353,8 +386,8 @@ export default function Settings() {
                 </div>
                 <input
                   type="checkbox"
-                  checked={theme.compactTable}
-                  onChange={(e) => setTheme({ ...theme, compactTable: e.target.checked })}
+                  checked={!!theme.compactTable}
+                  onChange={(e) => handleThemeToggle('compactTable', e.target.checked)}
                   class="w-5 h-5 accent-primary cursor-pointer"
                 />
               </div>
@@ -365,7 +398,8 @@ export default function Settings() {
                 </div>
                 <button
                   type="button"
-                  class="px-md py-sm border border-primary text-primary rounded-lg font-label-md hover:bg-primary-fixed transition-colors flex items-center gap-xs"
+                  onClick={exportDatabaseBackup}
+                  class="px-md py-sm border border-primary text-primary rounded-lg font-label-md hover:bg-primary-fixed transition-colors flex items-center gap-xs cursor-pointer"
                 >
                   <span class="material-symbols-outlined text-[18px]">download</span>
                   Export Backup

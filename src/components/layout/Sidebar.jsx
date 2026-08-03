@@ -1,9 +1,14 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 export default function Sidebar() {
   const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleNewRegistration = () => {
+    navigate('/students?register=true', { state: { openNewRegistration: true } });
+  };
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: 'dashboard' },
@@ -53,7 +58,11 @@ export default function Sidebar() {
       </nav>
 
       <div class="mt-auto space-y-xs">
-        <button class="w-full bg-primary text-on-primary py-sm px-md rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm mb-lg">
+        <button
+          onClick={handleNewRegistration}
+          class="w-full bg-primary text-on-primary py-sm px-md rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm mb-lg cursor-pointer flex items-center justify-center gap-xs"
+        >
+          <span class="material-symbols-outlined text-[18px]">person_add</span>
           New Registration
         </button>
 

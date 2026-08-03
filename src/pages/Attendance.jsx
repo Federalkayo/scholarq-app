@@ -69,6 +69,7 @@ export default function Attendance() {
         id: s.id,
         rollNo: idx + 1,
         name: s.name,
+        avatar: s.avatar,
         initials: getInitials(s.name),
         classSec: `${s.grade || ''} ${s.section || ''}`.trim(),
         status: attendanceMap[s.id] || 'Unmarked'
@@ -186,7 +187,7 @@ export default function Attendance() {
                   >
                     <div class="flex items-center gap-md">
                       <span class="text-label-sm text-outline w-6 font-bold">{st.rollNo}</span>
-                      <Avatar initials={st.initials} size="w-10 h-10" />
+                      <Avatar src={st.avatar} initials={st.initials} size="w-10 h-10" />
                       <div>
                         <p class="font-body-md text-body-md text-on-surface font-semibold">{st.name}</p>
                         <p class="text-xs text-on-surface-variant">{st.classSec}</p>
