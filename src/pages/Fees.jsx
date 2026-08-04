@@ -137,7 +137,8 @@ export default function Fees() {
             return {
               id: docSnap.id,
               name: data.name || 'Unnamed Student',
-              classSec: [data.grade, data.section].filter(Boolean).join(' - ')
+              classSec: [data.grade, data.section].filter(Boolean).join(' - '),
+              avatar: data.avatar || ''
             };
           })
         );
@@ -581,7 +582,11 @@ export default function Fees() {
                   <tr key={inv.id} class="hover:bg-surface-container-low transition-colors">
                     <td class="px-lg py-md">
                       <div class="flex items-center gap-md">
-                        <Avatar initials={inv.studentName.substring(0, 2).toUpperCase()} alt={inv.studentName} />
+                        <Avatar
+                          src={students.find((s) => s.id === inv.studentId)?.avatar || ''}
+                          initials={inv.studentName.substring(0, 2).toUpperCase()}
+                          alt={inv.studentName}
+                        />
                         <div>
                           <p class="font-body-md text-body-md text-on-surface font-semibold">{inv.studentName}</p>
                         </div>
