@@ -11,6 +11,8 @@ export default function StatusChip({ status }) {
     styles = 'bg-error-container/20 text-on-error-container';
   } else if (normalized === 'pending') {
     styles = 'bg-surface-container-highest text-on-surface-variant';
+  } else if (normalized === 'partially paid') {
+    styles = 'bg-tertiary-fixed text-on-tertiary-fixed-variant';
   } else if (normalized === 'late') {
     styles = 'bg-tertiary-fixed text-on-tertiary-fixed-variant';
   }
