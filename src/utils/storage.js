@@ -3,34 +3,25 @@ import { storage } from '../firebase';
 
 /**
  * Uploads a file to Firebase Storage under the given folder path and returns its public download URL.
- * Resiliently falls back to Base64 Data URL if storage bucket upload encounters permission/network errors.
+ * Throws a real error on failure instead of silently degrading to a Base64 Data URL —
+ * embedding a full image as text in Firestore risks exceeding the 1MB document limit
+ * and hides real Storage permission/network problems from the caller.
  * @param {File} file - The file object to upload.
  * @param {string} folder - Target storage folder (defaults to 'uploads').
- * @returns {Promise<string>} Public download URL or Data URL.
+ * @returns {Promise<string>} Public download URL.
  */
 export async function uploadFileToStorage(file, folder = 'uploads') {
   if (!file) throw new Error('No file provided for upload.');
 
-  try {
-    const timestamp = Date.now();
-    const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const storagePath = `${folder}/${timestamp}_${sanitizedFileName}`;
-    const storageRef = ref(storage, storagePath);
+  const timestamp = Date.now();
+  const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const storagePath = `${folder}/${timestamp}_${sanitizedFileName}`;
+  const storageRef = ref(storage, storagePath);
 
-    const snapshot = await uploadBytes(storageRef, file);
-    const downloadUrl = await getDownloadURL(snapshot.ref);
+  const snapshot = await uploadBytes(storageRef, file);
+  const downloadUrl = await getDownloadURL(snapshot.ref);
 
-    return downloadUrl;
-  } catch (err) {
-    console.warn('Firebase Storage upload notice (falling back to DataURL):', err);
-
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.onerror = (readErr) => reject(readErr);
-      reader.readAsDataURL(file);
-    });
-  }
+  return downloadUrl;
 }
 
 /**

@@ -4,7 +4,10 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
+import ParentNoticeModal from '../components/ui/ParentNoticeModal';
+import FormattedMarkdown from '../components/ui/FormattedMarkdown';
 import { computeFeeTrend } from '../utils/feeTrend';
+import { generateFinancialInsights } from '../lib/groq';
 
 function formatCurrency(amount) {
   return `$${(amount || 0).toLocaleString()}`;
@@ -17,6 +20,15 @@ export default function Fees() {
   const [error, setError] = useState('');
   const [sentReminderId, setSentReminderId] = useState(null);
   const [animateBars, setAnimateBars] = useState(false);
+
+  // AI Financial Insights state
+  const [financialInsights, setFinancialInsights] = useState('');
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState('');
+
+  // Parent Notice Modal state
+  const [noticeModalOpen, setNoticeModalOpen] = useState(false);
+  const [selectedInvoiceForNotice, setSelectedInvoiceForNotice] = useState(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setAnimateBars(true), 150);
@@ -73,10 +85,28 @@ export default function Fees() {
   const hasAnyTrendData = feeTrendData.some((d) => d.hasData);
 
   const handleSendReminder = (id) => {
-    // NOTE: this doesn't send anything real yet — it's UI feedback only.
-    // Real reminders get wired to n8n + Brevo later.
     setSentReminderId(id);
     setTimeout(() => setSentReminderId(null), 3000);
+  };
+
+  const handleGenerateInsights = async () => {
+    if (invoices.length === 0) return;
+    setInsightsLoading(true);
+    setInsightsError('');
+    try {
+      const res = await generateFinancialInsights(invoices);
+      setFinancialInsights(res);
+    } catch (err) {
+      console.error('Failed to generate financial insights:', err);
+      setInsightsError(err.message || 'Failed to generate financial insights.');
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
+  const openNoticeModal = (inv = null) => {
+    setSelectedInvoiceForNotice(inv);
+    setNoticeModalOpen(true);
   };
 
   return (
@@ -88,17 +118,26 @@ export default function Fees() {
         </div>
       )}
 
+      <ParentNoticeModal
+        isOpen={noticeModalOpen}
+        onClose={() => setNoticeModalOpen(false)}
+        initialData={selectedInvoiceForNotice || {}}
+      />
+
       <div class="flex flex-wrap justify-between items-end mb-lg gap-md">
         <div>
           <h2 class="font-display-lg text-display-lg text-primary">Fee Management</h2>
           <p class="text-on-surface-variant font-body-md">
-            Monitor and collect tuition fees.
+            Monitor, forecast, and collect tuition fees.
           </p>
         </div>
-        <div class="flex gap-sm">
-          <button class="bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md px-md py-sm rounded-lg flex items-center gap-xs hover:bg-surface-container-high transition-all">
-            <span class="material-symbols-outlined">filter_list</span>
-            Filter
+        <div class="flex flex-wrap gap-sm">
+          <button
+            onClick={() => openNoticeModal(null)}
+            class="bg-primary/10 border border-primary/20 text-primary font-label-md px-md py-sm rounded-lg flex items-center gap-xs hover:bg-primary/20 transition-all"
+          >
+            <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+            AI Parent Notice
           </button>
           <button
             onClick={() => handleSendReminder('ALL')}
@@ -170,6 +209,54 @@ export default function Fees() {
         </div>
       </div>
 
+      {/* AI Financial Forecast & Recovery Insights */}
+      <div class="bg-gradient-to-r from-surface-container-lowest to-primary-fixed/20 rounded-xl border border-primary/20 shadow-sm p-lg mb-lg">
+        <div class="flex flex-wrap justify-between items-center mb-md gap-md">
+          <div class="flex items-center gap-md">
+            <div class="p-2 bg-primary/10 rounded-lg text-primary">
+              <span class="material-symbols-outlined text-[24px]">trending_up</span>
+            </div>
+            <div>
+              <h4 class="font-headline-sm text-on-surface font-bold">AI Financial Collection Forecast & Recovery Insights</h4>
+              <p class="text-xs text-on-surface-variant">Real-time analytical revenue forecasting powered by Groq Llama-3.3</p>
+            </div>
+          </div>
+          <button
+            onClick={handleGenerateInsights}
+            disabled={insightsLoading}
+            class="bg-primary text-on-primary font-label-md px-md py-sm rounded-lg flex items-center gap-xs hover:opacity-90 active:scale-95 transition-all shadow-sm disabled:opacity-50"
+          >
+            {insightsLoading ? (
+              <>
+                <span class="w-4 h-4 border-2 border-on-primary/40 border-t-on-primary rounded-full animate-spin"></span>
+                Analyzing Financial Data…
+              </>
+            ) : (
+              <>
+                <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                {financialInsights ? 'Refresh Forecast' : 'Generate AI Forecast'}
+              </>
+            )}
+          </button>
+        </div>
+
+        {insightsError && (
+          <div class="bg-error-container text-error text-label-md p-md rounded-lg mb-sm">
+            {insightsError}
+          </div>
+        )}
+
+        {financialInsights ? (
+          <div class="bg-surface-container-lowest p-md rounded-lg border border-outline-variant/40 animate-fadeIn">
+            <FormattedMarkdown content={financialInsights} />
+          </div>
+        ) : (
+          <div class="bg-surface/50 border border-dashed border-outline-variant rounded-lg p-md text-center text-on-surface-variant text-body-md">
+            Click <strong class="text-primary font-semibold">"Generate AI Forecast"</strong> to produce an executive cash flow analysis, identify recovery vulnerabilities, and receive 3 custom bursar action recommendations.
+          </div>
+        )}
+      </div>
+
       <div class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
         {loading ? (
           <div class="p-xl text-center text-on-surface-variant">Loading invoices…</div>
@@ -189,7 +276,7 @@ export default function Fees() {
                   <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Amount Due</th>
                   <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Due Date</th>
                   <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Status</th>
-                  <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Action</th>
+                  <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-outline-variant/30">
@@ -210,14 +297,24 @@ export default function Fees() {
                       <StatusChip status={inv.status} />
                     </td>
                     <td class="px-lg py-md">
-                      <button
-                        onClick={() => handleSendReminder(inv.id)}
-                        title="Send Reminder"
-                        class="flex items-center gap-xs text-primary hover:bg-primary-fixed px-sm py-1 rounded-lg transition-colors font-label-md text-xs active:scale-95"
-                      >
-                        <span class="material-symbols-outlined text-[18px]">send</span>
-                        Reminder
-                      </button>
+                      <div class="flex items-center gap-xs">
+                        <button
+                          onClick={() => openNoticeModal(inv)}
+                          title="Generate Smart AI Parent Notice"
+                          class="flex items-center gap-xs text-primary hover:bg-primary-fixed px-sm py-1 rounded-lg transition-colors font-label-md text-xs active:scale-95 border border-primary/20"
+                        >
+                          <span class="material-symbols-outlined text-[16px]">auto_awesome</span>
+                          AI Notice
+                        </button>
+                        <button
+                          onClick={() => handleSendReminder(inv.id)}
+                          title="Send Quick Reminder"
+                          class="flex items-center gap-xs text-on-surface-variant hover:bg-surface-container-high px-sm py-1 rounded-lg transition-colors font-label-md text-xs active:scale-95"
+                        >
+                          <span class="material-symbols-outlined text-[16px]">send</span>
+                          Reminder
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { computeFeeTrend } from '../utils/feeTrend';
+import { generatePrincipalSummary } from '../lib/groq';
 
 function getLast7Days() {
   const days = [];
@@ -103,6 +104,29 @@ export default function Reports() {
     });
   }, [students, fees, todayRecords]);
 
+  const [aiSummary, setAiSummary] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+
+  const handleGenerateSummary = async () => {
+    setAiLoading(true);
+    setAiError('');
+    try {
+      const summaryText = await generatePrincipalSummary({
+        totalStudents,
+        todayRate,
+        sectionRows,
+        fees
+      });
+      setAiSummary(summaryText);
+    } catch (err) {
+      console.error('Failed to generate AI summary:', err);
+      setAiError(err.message || 'Could not generate summary right now.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <div class="p-xl max-w-container-max mx-auto animate-fadeIn">
       <div class="mb-xl flex flex-wrap justify-between items-end gap-md">
@@ -115,7 +139,7 @@ export default function Reports() {
       </div>
 
       <div class="grid grid-cols-12 gap-lg">
-        {/* AI Summary Card — honest placeholder until Gemini is wired */}
+        {/* AI Summary Card — Powered by Groq AI */}
         <div class="col-span-12 lg:col-span-4 flex flex-col gap-lg">
           <div class="bg-primary text-on-primary rounded-xl p-lg shadow-sm relative overflow-hidden h-full flex flex-col justify-between hover-lift">
             <div class="absolute -right-8 -top-8 opacity-10 pointer-events-none">
@@ -127,19 +151,44 @@ export default function Reports() {
               <div class="flex items-center gap-xs mb-md">
                 <span class="material-symbols-outlined text-secondary-fixed">auto_awesome</span>
                 <h3 class="font-label-sm text-label-sm uppercase tracking-widest text-on-primary-container font-bold">
-                  Weekly Summary
+                  Principal Briefing
                 </h3>
               </div>
-              <h4 class="font-headline-md text-headline-md mb-sm text-white">AI Insights</h4>
-              <p class="text-body-md text-on-primary-container/80 bg-white/5 p-md rounded-lg">
-                AI-generated insights aren't connected yet — this will summarize attendance, fees, and enrollment trends automatically once Gemini is wired in.
-              </p>
+              <h4 class="font-headline-md text-headline-md mb-sm text-white">AI Executive Insights</h4>
+              
+              {aiError && (
+                <div class="bg-error-container text-error text-label-sm p-sm rounded-lg mb-sm">
+                  {aiError}
+                </div>
+              )}
+
+              {aiSummary ? (
+                <div class="text-body-md text-white/90 bg-white/10 p-md rounded-lg leading-relaxed whitespace-pre-line border border-white/20">
+                  {aiSummary}
+                </div>
+              ) : (
+                <p class="text-body-md text-on-primary-container/80 bg-white/5 p-md rounded-lg">
+                  Click below to generate a real-time institutional briefing summarizing today's attendance trends, fee collection status, and section performance.
+                </p>
+              )}
             </div>
+
             <button
-              disabled
-              class="mt-xl w-full border border-on-primary-container/30 text-white/50 font-label-md py-sm rounded-lg cursor-not-allowed relative z-10"
+              onClick={handleGenerateSummary}
+              disabled={aiLoading}
+              class="mt-xl w-full border border-white/40 hover:border-white text-white font-label-md py-sm rounded-lg transition-all flex items-center justify-center gap-xs relative z-10 disabled:opacity-50 hover:bg-white/10"
             >
-              Coming soon
+              {aiLoading ? (
+                <>
+                  <span class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+                  Analyzing Data…
+                </>
+              ) : (
+                <>
+                  <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                  {aiSummary ? 'Regenerate Briefing' : 'Generate Summary'}
+                </>
+              )}
             </button>
           </div>
         </div>

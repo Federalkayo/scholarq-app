@@ -6,6 +6,7 @@ import { uploadFileToStorage } from '../utils/storage';
 import { generateReportComment } from '../lib/groq';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
+import ParentNoticeModal from '../components/ui/ParentNoticeModal';
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
@@ -50,6 +51,15 @@ export default function Students() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [aiCopied, setAiCopied] = useState(false);
+
+  // Parent Notice Modal state
+  const [noticeModalOpen, setNoticeModalOpen] = useState(false);
+  const [selectedForNotice, setSelectedForNotice] = useState(null);
+
+  const openNoticeModal = (student = null) => {
+    setSelectedForNotice(student || selectedStudent);
+    setNoticeModalOpen(true);
+  };
 
   useEffect(() => {
     if (location.state?.openNewRegistration || searchParams.get('register') === 'true') {
@@ -132,6 +142,9 @@ export default function Students() {
     setForm(emptyForm);
     setModalMode('add');
     setSaveError('');
+    setAiComment('');
+    setAiError('');
+    setAiCopied(false);
     setShowModal(true);
   };
 
@@ -149,6 +162,9 @@ export default function Students() {
     });
     setModalMode('edit');
     setSaveError('');
+    setAiComment('');
+    setAiError('');
+    setAiCopied(false);
     setShowModal(true);
   };
 
@@ -156,6 +172,9 @@ export default function Students() {
     setShowModal(false);
     setForm(emptyForm);
     setSaveError('');
+    setAiComment('');
+    setAiError('');
+    setAiCopied(false);
   };
 
   const handleFormChange = (field, value) => {
@@ -230,17 +249,18 @@ export default function Students() {
     }
   };
 
-  const handleGenerateComment = async () => {
-    if (!selectedStudent) return;
+  const handleGenerateComment = async (studentParam) => {
+    const target = studentParam || selectedStudent;
+    if (!target) return;
     setAiLoading(true);
     setAiError('');
     setAiCopied(false);
     try {
-      const comment = await generateReportComment(selectedStudent);
+      const comment = await generateReportComment(target);
       setAiComment(comment);
     } catch (err) {
       console.error('Failed to generate AI comment:', err);
-      setAiError('Could not generate a comment right now. Please try again.');
+      setAiError(err.message || 'Could not generate a comment right now. Please try again.');
     } finally {
       setAiLoading(false);
     }
@@ -258,6 +278,12 @@ export default function Students() {
 
   return (
     <div class="p-xl max-w-container-max mx-auto relative">
+      <ParentNoticeModal
+        isOpen={noticeModalOpen}
+        onClose={() => setNoticeModalOpen(false)}
+        initialData={selectedForNotice || {}}
+      />
+
       <div class="flex flex-wrap justify-between items-end mb-lg gap-md">
         <div>
           <h2 class="font-display-lg text-display-lg text-primary">Student Management</h2>
@@ -265,14 +291,13 @@ export default function Students() {
             Managing {totalStudents} active student{totalStudents !== 1 ? 's' : ''} across all sections.
           </p>
         </div>
-        <div class="flex gap-sm">
-          <button class="flex items-center gap-xs px-md py-2 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface hover:bg-surface-container-high transition-all">
-            <span class="material-symbols-outlined text-[20px]">filter_list</span>
-            Filters
-          </button>
-          <button class="flex items-center gap-xs px-md py-2 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface hover:bg-surface-container-high transition-all">
-            <span class="material-symbols-outlined text-[20px]">file_download</span>
-            Export CSV
+        <div class="flex flex-wrap gap-sm">
+          <button
+            onClick={() => openNoticeModal(null)}
+            class="flex items-center gap-xs px-md py-2 bg-primary/10 border border-primary/20 rounded-lg font-label-md text-label-md text-primary hover:bg-primary/20 transition-all"
+          >
+            <span class="material-symbols-outlined text-[20px]">auto_awesome</span>
+            AI Parent Notice
           </button>
           <button
             onClick={openAddModal}
@@ -508,8 +533,12 @@ export default function Students() {
               >
                 Edit Record
               </button>
-              <button class="flex-1 py-sm border border-outline-variant text-on-surface rounded-lg font-label-md hover:bg-surface-container-high transition-colors">
-                Contact Guardian
+              <button
+                onClick={() => openNoticeModal(selectedStudent)}
+                class="flex-1 py-sm border border-primary/30 text-primary bg-primary/5 rounded-lg font-label-md hover:bg-primary/10 transition-colors flex items-center justify-center gap-xs"
+              >
+                <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                AI Contact Guardian
               </button>
             </div>
           </div>
@@ -654,6 +683,77 @@ export default function Students() {
                 />
               </div>
             </div>
+
+            {modalMode === 'edit' && (
+              <div class="mt-lg pt-md border-t border-outline-variant">
+                <div class="flex items-center justify-between mb-sm">
+                  <h4 class="font-label-md text-on-surface-variant flex items-center gap-xs">
+                    <span class="material-symbols-outlined text-[18px] text-primary">auto_awesome</span>
+                    AI Report Card Comment
+                  </h4>
+                </div>
+
+                {aiError && (
+                  <div class="bg-error-container text-error text-label-sm px-md py-sm rounded-lg mb-sm">
+                    {aiError}
+                  </div>
+                )}
+
+                {aiComment ? (
+                  <div>
+                    <textarea
+                      value={aiComment}
+                      onChange={(e) => setAiComment(e.target.value)}
+                      rows={3}
+                      class="w-full border border-outline-variant rounded-lg px-md py-sm text-body-md text-on-surface bg-surface outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
+                    />
+                    <div class="flex gap-sm mt-sm">
+                      <button
+                        type="button"
+                        onClick={handleCopyComment}
+                        class="flex-1 flex items-center justify-center gap-xs py-1.5 border border-outline-variant text-on-surface rounded-lg font-label-sm hover:bg-surface-container-high transition-colors"
+                      >
+                        <span class="material-symbols-outlined text-[16px]">
+                          {aiCopied ? 'check' : 'content_copy'}
+                        </span>
+                        {aiCopied ? 'Copied!' : 'Copy'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateComment(form)}
+                        disabled={aiLoading}
+                        class="flex-1 flex items-center justify-center gap-xs py-1.5 border border-outline-variant text-on-surface rounded-lg font-label-sm hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                      >
+                        <span class="material-symbols-outlined text-[16px]">refresh</span>
+                        Regenerate
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateComment(form)}
+                    disabled={aiLoading}
+                    class="w-full flex items-center justify-center gap-xs py-2 bg-primary/10 text-primary rounded-lg font-label-md hover:bg-primary/20 transition-colors disabled:opacity-50"
+                  >
+                    {aiLoading ? (
+                      <>
+                        <span class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"></span>
+                        Generating…
+                      </>
+                    ) : (
+                      <>
+                        <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                        Generate AI Comment
+                      </>
+                    )}
+                  </button>
+                )}
+                <p class="text-[11px] text-on-surface-variant mt-xs italic">
+                  AI-generated draft based on student attendance data — always review before use.
+                </p>
+              </div>
+            )}
 
             <div class="flex gap-md mt-xl">
               <button

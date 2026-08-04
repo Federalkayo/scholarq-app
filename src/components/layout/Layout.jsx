@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import ScholarBot from '../ui/ScholarBot';
 
 export default function Layout() {
   const location = useLocation();
@@ -10,7 +11,7 @@ export default function Layout() {
   const [selectedSection, setSelectedSection] = useState('Section A');
 
   return (
-    <div class="min-h-screen bg-background text-on-surface flex">
+    <div class="min-h-screen bg-background text-on-surface flex relative">
       <Sidebar />
       <div class="flex-1 flex flex-col min-w-0">
         <Topbar
@@ -36,6 +37,7 @@ export default function Layout() {
           </div>
         </main>
       </div>
+      <ScholarBot />
     </div>
   );
 }
