@@ -173,6 +173,18 @@ export default function Fees() {
 
   const activeFilterCount = (filterStatus !== 'All' ? 1 : 0) + (filterClass !== 'All' ? 1 : 0);
 
+  // Resolve a student's current profile photo for an invoice: prefer the linked
+  // studentId, but fall back to a name match for legacy invoices saved before
+  // invoices carried a studentId (e.g. seeded data or manually-typed entries).
+  const getStudentAvatar = (inv) => {
+    const byId = inv.studentId && students.find((s) => s.id === inv.studentId);
+    if (byId?.avatar) return byId.avatar;
+    const byName = students.find(
+      (s) => s.name.trim().toLowerCase() === (inv.studentName || '').trim().toLowerCase()
+    );
+    return byName?.avatar || '';
+  };
+
   const totalOutstanding = invoices
     .filter((inv) => inv.status === 'Overdue' || inv.status === 'Pending')
     .reduce((sum, inv) => sum + inv.amount, 0);
@@ -583,7 +595,7 @@ export default function Fees() {
                     <td class="px-lg py-md">
                       <div class="flex items-center gap-md">
                         <Avatar
-                          src={students.find((s) => s.id === inv.studentId)?.avatar || ''}
+                          src={getStudentAvatar(inv)}
                           initials={inv.studentName.substring(0, 2).toUpperCase()}
                           alt={inv.studentName}
                         />
