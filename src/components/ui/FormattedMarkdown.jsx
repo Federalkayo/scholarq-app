@@ -43,9 +43,10 @@ export default function FormattedMarkdown({ content, className = '' }) {
       return;
     }
 
-    // Headings ### or ## or #
-    if (trimmed.startsWith('### ') || trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
-      const headingText = trimmed.replace(/^#+\s*/, '');
+    // Headings #, ##, ###, ####, etc.
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const headingText = headingMatch[2];
       elements.push(
         <h4 key={index} class="font-bold text-[14px] text-primary mt-sm mb-xs">
           {renderInline(headingText)}

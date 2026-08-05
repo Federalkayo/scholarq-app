@@ -29,7 +29,42 @@ export default function ScholarBot() {
   const [students, setStudents] = useState([]);
   const [fees, setFees] = useState([]);
 
+  // Copy & Speech state
+  const [speakingMsgId, setSpeakingMsgId] = useState(null);
+  const [copiedMsgId, setCopiedMsgId] = useState(null);
+
   const messagesEndRef = useRef(null);
+
+  const handleCopyText = (msgId, text) => {
+    navigator.clipboard.writeText(text);
+    setCopiedMsgId(msgId);
+    setTimeout(() => setCopiedMsgId(null), 2000);
+  };
+
+  const handleSpeakText = (msgId, text) => {
+    if (!('speechSynthesis' in window)) {
+      alert('Speech synthesis is not supported in this browser.');
+      return;
+    }
+
+    if (speakingMsgId === msgId) {
+      window.speechSynthesis.cancel();
+      setSpeakingMsgId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const cleanText = text.replace(/[*#_`]/g, '');
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onend = () => setSpeakingMsgId(null);
+    utterance.onerror = () => setSpeakingMsgId(null);
+
+    setSpeakingMsgId(msgId);
+    window.speechSynthesis.speak(utterance);
+  };
 
   useEffect(() => {
     const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
@@ -169,8 +204,9 @@ export default function ScholarBot() {
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                class={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                class={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
               >
+                {/* Message Bubble Container */}
                 <div
                   class={`max-w-[88%] p-md rounded-2xl text-body-md leading-relaxed shadow-xs ${
                     msg.sender === 'user'
@@ -182,6 +218,45 @@ export default function ScholarBot() {
                     <p class="whitespace-pre-wrap">{msg.text}</p>
                   ) : (
                     <FormattedMarkdown content={msg.text} />
+                  )}
+                </div>
+
+                {/* Actions outside the message bubble */}
+                <div
+                  class={`flex items-center gap-xs mt-1 px-1 text-on-surface-variant ${
+                    msg.sender === 'user' ? 'justify-end' : 'justify-start'
+                  }`}
+                >
+                  {/* Copy button */}
+                  <button
+                    type="button"
+                    onClick={() => handleCopyText(msg.id, msg.text)}
+                    title="Copy message text"
+                    class="p-1 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant hover:text-on-surface flex items-center gap-1 text-[11px]"
+                  >
+                    <span class="material-symbols-outlined text-[15px]">
+                      {copiedMsgId === msg.id ? 'check' : 'content_copy'}
+                    </span>
+                    <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
+                  </button>
+
+                  {/* Read Speaker button (ONLY for AI / bot messages) */}
+                  {msg.sender === 'bot' && (
+                    <button
+                      type="button"
+                      onClick={() => handleSpeakText(msg.id, msg.text)}
+                      title={speakingMsgId === msg.id ? 'Stop reading' : 'Read text out loud'}
+                      class={`p-1 rounded-md transition-colors flex items-center gap-1 text-[11px] ${
+                        speakingMsgId === msg.id
+                          ? 'bg-secondary/20 text-secondary font-bold border border-secondary/30'
+                          : 'hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      <span class={`material-symbols-outlined text-[15px] ${speakingMsgId === msg.id ? 'animate-pulse' : ''}`}>
+                        {speakingMsgId === msg.id ? 'volume_off' : 'volume_up'}
+                      </span>
+                      <span>{speakingMsgId === msg.id ? 'Stop' : 'Read'}</span>
+                    </button>
                   )}
                 </div>
               </div>

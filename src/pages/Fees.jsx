@@ -1,43 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
 import ParentNoticeModal from '../components/ui/ParentNoticeModal';
+import ClassFeeStructureModal from '../components/ui/ClassFeeStructureModal';
+import StudentFeeBreakdownModal from '../components/ui/StudentFeeBreakdownModal';
 import FormattedMarkdown from '../components/ui/FormattedMarkdown';
 import { computeFeeTrend } from '../utils/feeTrend';
 import { generateFinancialInsights } from '../lib/groq';
-
-function formatCurrency(amount) {
-  return `$${(amount || 0).toLocaleString()}`;
-}
-
-const STATUS_OPTIONS = ['Paid', 'Pending', 'Partially Paid', 'Overdue'];
-const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'POS', 'Debit/Credit Card', 'Cheque'];
-const PAYMENT_METHOD_ICONS = {
-  'Cash': 'payments',
-  'Bank Transfer': 'account_balance',
-  'POS': 'point_of_sale',
-  'Debit/Credit Card': 'credit_card',
-  'Cheque': 'receipt_long'
-};
-const FEE_TYPE_OPTIONS = [
-  'Tuition', 'Development Levy', 'Exam Fee', 'Uniform', 'Books & Materials',
-  'Transport', 'Boarding', 'PTA Levy', 'Other'
-];
-
-function computeStatus(amountDue, amountPaid) {
-  const due = Number(amountDue) || 0;
-  const paid = Number(amountPaid) || 0;
-  if (paid <= 0) return 'Pending';
-  if (paid < due) return 'Partially Paid';
-  return 'Paid';
-}
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
+import {
+  STATUS_OPTIONS,
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_ICONS,
+  FEE_TYPE_OPTIONS,
+  computeStatus,
+  todayISO,
+  formatCurrency
+} from '../constants/fees';
 
 const emptyForm = {
   id: null,
@@ -51,7 +32,8 @@ const emptyForm = {
   paymentMethod: '',
   paymentDate: '',
   receiptNo: '',
-  remarks: ''
+  remarks: '',
+  term: ''
 };
 
 export default function Fees() {
@@ -89,6 +71,13 @@ export default function Fees() {
   const [noticeModalOpen, setNoticeModalOpen] = useState(false);
   const [selectedInvoiceForNotice, setSelectedInvoiceForNotice] = useState(null);
 
+  // Class Fee Structure state
+  const [feeStructures, setFeeStructures] = useState([]);
+  const [showClassFeesModal, setShowClassFeesModal] = useState(false);
+
+  // Selected student group for dialog breakdown modal
+  const [selectedStudentGroup, setSelectedStudentGroup] = useState(null);
+
   useEffect(() => {
     const timer = setTimeout(() => setAnimateBars(true), 150);
     return () => clearTimeout(timer);
@@ -102,6 +91,7 @@ export default function Fees() {
           const data = docSnap.data();
           return {
             id: docSnap.id,
+            studentId: data.studentId || '',
             studentName: data.studentName || 'Unknown Student',
             classSec: data.classSec || '',
             feeType: data.feeType || '',
@@ -111,6 +101,7 @@ export default function Fees() {
             paymentDate: data.paymentDate || '',
             receiptNo: data.receiptNo || '',
             remarks: data.remarks || '',
+            term: data.term || '',
             dueDate: data.dueDate || '',
             status: data.status || 'Pending'
           };
@@ -138,12 +129,36 @@ export default function Fees() {
               id: docSnap.id,
               name: data.name || 'Unnamed Student',
               classSec: [data.grade, data.section].filter(Boolean).join(' - '),
+              grade: data.grade || '',
               avatar: data.avatar || ''
             };
           })
         );
       },
       (err) => console.error('Failed to load students for invoice form:', err)
+    );
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'feeStructures'),
+      (snapshot) => {
+        setFeeStructures(
+          snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              term: data.term || '',
+              grade: data.grade || '',
+              feeType: data.feeType || '',
+              amount: typeof data.amount === 'number' ? data.amount : 0,
+              dueDate: data.dueDate || ''
+            };
+          })
+        );
+      },
+      (err) => console.error('Failed to load class fee structures:', err)
     );
     return unsubscribe;
   }, []);
@@ -185,6 +200,69 @@ export default function Fees() {
     return byName?.avatar || '';
   };
 
+  const toggleStudentExpand = (key) => {
+    setExpandedStudentKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const groupedStudentInvoices = useMemo(() => {
+    const map = new Map();
+    filteredInvoices.forEach((inv) => {
+      const key = inv.studentId || `${inv.studentName}_${inv.classSec}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          studentId: inv.studentId,
+          studentName: inv.studentName,
+          classSec: inv.classSec,
+          avatar: getStudentAvatar(inv),
+          invoices: []
+        });
+      }
+      map.get(key).invoices.push(inv);
+    });
+
+    return Array.from(map.values()).map((group) => {
+      const totalAmount = group.invoices.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+      const totalPaid = group.invoices.reduce((sum, i) => sum + (Number(i.amountPaid) || 0), 0);
+      const hasOverdue = group.invoices.some((i) => i.status === 'Overdue');
+      const allPaid = group.invoices.every((i) => i.status === 'Paid');
+      const hasPaid = totalPaid > 0;
+
+      let overallStatus = 'Pending';
+      if (allPaid) overallStatus = 'Paid';
+      else if (hasOverdue) overallStatus = 'Overdue';
+      else if (hasPaid) overallStatus = 'Partially Paid';
+
+      const feeTypesList = Array.from(
+        new Set(group.invoices.map((i) => i.feeType).filter(Boolean))
+      ).join(', ');
+
+      const dueDates = group.invoices.map((i) => i.dueDate).filter(Boolean).sort();
+      const primaryDueDate = dueDates[0] || '—';
+
+      return {
+        ...group,
+        totalAmount,
+        totalPaid,
+        overallStatus,
+        feeTypesList,
+        primaryDueDate
+      };
+    });
+  }, [filteredInvoices, students]);
+
+  const activeSelectedStudentGroup = useMemo(() => {
+    if (!selectedStudentGroup) return null;
+    return (
+      groupedStudentInvoices.find((g) => g.key === selectedStudentGroup.key) || selectedStudentGroup
+    );
+  }, [selectedStudentGroup, groupedStudentInvoices]);
+
   const totalOutstanding = invoices
     .filter((inv) => inv.status === 'Overdue' || inv.status === 'Pending')
     .reduce((sum, inv) => sum + inv.amount, 0);
@@ -222,7 +300,8 @@ export default function Fees() {
       paymentMethod: inv.paymentMethod || '',
       paymentDate: inv.paymentDate || '',
       receiptNo: inv.receiptNo || '',
-      remarks: inv.remarks || ''
+      remarks: inv.remarks || '',
+      term: inv.term || ''
     });
     setModalMode('edit');
     setSaveError('');
@@ -235,6 +314,13 @@ export default function Fees() {
     setSaveError('');
   };
 
+  const findFeeStructureMatch = (grade, feeType) => {
+    const matches = feeStructures.filter((s) => s.grade === grade && s.feeType === feeType);
+    if (matches.length === 0) return null;
+    // Prefer the most recently due structure if several terms defined the same class/fee type
+    return matches.slice().sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''))[0];
+  };
+
   const handleFormChange = (field, value) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
@@ -242,18 +328,40 @@ export default function Fees() {
       if (field === 'amountPaid' && Number(value) > 0 && !prev.paymentDate) {
         next.paymentDate = todayISO();
       }
+      // Auto-fill amount from the class fee structure once fee type is known,
+      // but never override an amount the bursar has already typed in
+      if (field === 'feeType' && !prev.amount) {
+        const picked = students.find((s) => s.id === prev.studentId);
+        const match = picked && findFeeStructureMatch(picked.grade, value);
+        if (match) {
+          next.amount = match.amount;
+          next.term = match.term;
+          if (!prev.dueDate && match.dueDate) next.dueDate = match.dueDate;
+        }
+      }
       return next;
     });
   };
 
   const handleStudentPick = (studentId) => {
     const picked = students.find((s) => s.id === studentId);
-    setForm((prev) => ({
-      ...prev,
-      studentId,
-      studentName: picked ? picked.name : prev.studentName,
-      classSec: picked ? picked.classSec : prev.classSec
-    }));
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        studentId,
+        studentName: picked ? picked.name : prev.studentName,
+        classSec: picked ? picked.classSec : prev.classSec
+      };
+      if (picked && !prev.amount) {
+        const match = findFeeStructureMatch(picked.grade, prev.feeType);
+        if (match) {
+          next.amount = match.amount;
+          next.term = match.term;
+          if (!prev.dueDate && match.dueDate) next.dueDate = match.dueDate;
+        }
+      }
+      return next;
+    });
   };
 
   const handleSaveInvoice = async (e) => {
@@ -303,6 +411,7 @@ export default function Fees() {
       paymentDate: amountPaidNum > 0 ? form.paymentDate : '',
       receiptNo: amountPaidNum > 0 ? form.receiptNo.trim() : '',
       remarks: amountPaidNum > 0 ? form.remarks.trim() : '',
+      term: form.term.trim(),
       status: computeStatus(amountDueNum, amountPaidNum)
     };
 
@@ -337,6 +446,66 @@ export default function Fees() {
       setMarkingPaidId(null);
       setMarkingChoiceId(null);
     }
+  };
+
+  const handleSaveFeeStructure = async (structure) => {
+    const payload = {
+      term: structure.term,
+      grade: structure.grade,
+      feeType: structure.feeType,
+      amount: structure.amount,
+      dueDate: structure.dueDate || ''
+    };
+    if (structure.id) {
+      await updateDoc(doc(db, 'feeStructures', structure.id), payload);
+    } else {
+      await addDoc(collection(db, 'feeStructures'), payload);
+    }
+  };
+
+  const handleDeleteFeeStructure = async (id) => {
+    await deleteDoc(doc(db, 'feeStructures', id));
+  };
+
+  const handleGenerateInvoicesForStructure = async (structure) => {
+    const classStudents = students.filter(
+      (s) => s.grade === structure.grade || s.classSec === structure.grade || s.classSec?.startsWith(structure.grade)
+    );
+    const normTerm = (structure.term || '').trim().toLowerCase();
+    const normType = (structure.feeType || '').trim().toLowerCase();
+    const alreadyInvoiced = new Set(
+      invoices
+        .filter(
+          (inv) =>
+            (inv.feeType || '').trim().toLowerCase() === normType &&
+            (inv.term || '').trim().toLowerCase() === normTerm
+        )
+        .map((inv) => inv.studentId)
+        .filter(Boolean)
+    );
+    const targets = classStudents.filter((s) => !alreadyInvoiced.has(s.id));
+
+    await Promise.all(
+      targets.map((s) =>
+        addDoc(collection(db, 'fees'), {
+          studentId: s.id,
+          studentName: s.name,
+          classSec: s.classSec,
+          feeType: structure.feeType,
+          amount: structure.amount,
+          dueDate: structure.dueDate || '',
+          amountPaid: 0,
+          paymentMethod: '',
+          paymentDate: '',
+          receiptNo: '',
+          remarks: '',
+          term: structure.term,
+          status: computeStatus(structure.amount, 0)
+        })
+      )
+    );
+
+    return { created: targets.length, skipped: classStudents.length - targets.length };
   };
 
   const handleGenerateInsights = async () => {
@@ -374,6 +543,28 @@ export default function Fees() {
         initialData={selectedInvoiceForNotice || {}}
       />
 
+      <ClassFeeStructureModal
+        isOpen={showClassFeesModal}
+        onClose={() => setShowClassFeesModal(false)}
+        feeStructures={feeStructures}
+        students={students}
+        invoices={invoices}
+        onSaveStructure={handleSaveFeeStructure}
+        onDeleteStructure={handleDeleteFeeStructure}
+        onGenerateInvoices={handleGenerateInvoicesForStructure}
+      />
+
+      <StudentFeeBreakdownModal
+        isOpen={Boolean(selectedStudentGroup)}
+        onClose={() => setSelectedStudentGroup(null)}
+        group={activeSelectedStudentGroup}
+        onMarkAsPaid={handleMarkAsPaid}
+        onEditInvoice={openEditModal}
+        onOpenNoticeModal={openNoticeModal}
+        onSendReminder={handleSendReminder}
+        markingPaidId={markingPaidId}
+      />
+
       <div class="flex flex-wrap justify-between items-end mb-lg gap-md">
         <div>
           <h2 class="font-display-lg text-display-lg text-primary">Fee Management</h2>
@@ -388,6 +579,13 @@ export default function Fees() {
           >
             <span class="material-symbols-outlined text-[18px]">add</span>
             Add Invoice
+          </button>
+          <button
+            onClick={() => setShowClassFeesModal(true)}
+            class="bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md px-md py-sm rounded-lg flex items-center gap-xs hover:bg-surface-container-high transition-all"
+          >
+            <span class="material-symbols-outlined text-[18px]">account_balance_wallet</span>
+            Class Fees
           </button>
           <div class="relative">
             <button
@@ -590,128 +788,74 @@ export default function Fees() {
                 </tr>
               </thead>
               <tbody class="divide-y divide-outline-variant/30">
-                {filteredInvoices.map((inv) => (
-                  <tr key={inv.id} class="hover:bg-surface-container-low transition-colors">
-                    <td class="px-lg py-md">
-                      <div class="flex items-center gap-md">
-                        <Avatar
-                          src={getStudentAvatar(inv)}
-                          initials={inv.studentName.substring(0, 2).toUpperCase()}
-                          alt={inv.studentName}
-                        />
-                        <div>
-                          <p class="font-body-md text-body-md text-on-surface font-semibold">{inv.studentName}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td class="px-lg py-md font-body-md text-on-surface-variant">{inv.feeType || '—'}</td>
-                    <td class="px-lg py-md font-body-md text-on-surface">{inv.classSec}</td>
-                    <td class="px-lg py-md font-body-md font-bold text-on-surface">{formatCurrency(inv.amount)}</td>
-                    <td class="px-lg py-md">
-                      {inv.amountPaid > 0 ? (
-                        <div title={[inv.receiptNo && `Receipt: ${inv.receiptNo}`, inv.paymentDate && `Paid on ${inv.paymentDate}`, inv.remarks].filter(Boolean).join(' • ')}>
-                          <p class="font-body-md text-on-surface">{formatCurrency(inv.amountPaid)}</p>
-                          <div class="flex items-center gap-xs mt-0.5">
-                            {inv.paymentMethod && (
-                              <span class="text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant flex items-center gap-0.5">
-                                <span class="material-symbols-outlined text-[12px]">
-                                  {PAYMENT_METHOD_ICONS[inv.paymentMethod] || 'payments'}
-                                </span>
-                                {inv.paymentMethod}
+                {groupedStudentInvoices.map((group) => {
+                  const invoiceCount = group.invoices.length;
+                  return (
+                    <tr
+                      key={group.key}
+                      onClick={() => setSelectedStudentGroup(group)}
+                      class="hover:bg-surface-container-low transition-colors cursor-pointer select-none group"
+                    >
+                      <td class="px-lg py-md">
+                        <div class="flex items-center gap-md">
+                          <Avatar
+                            src={group.avatar}
+                            initials={group.studentName.substring(0, 2).toUpperCase()}
+                            alt={group.studentName}
+                          />
+                          <div>
+                            <div class="flex items-center gap-xs">
+                              <p class="font-body-md text-body-md text-on-surface font-bold group-hover:text-primary transition-colors">
+                                {group.studentName}
+                              </p>
+                              <span class="bg-primary/10 text-primary text-[11px] font-bold px-2 py-0.5 rounded-full border border-primary/20">
+                                {invoiceCount} {invoiceCount === 1 ? 'fee' : 'fees'}
                               </span>
-                            )}
-                            {inv.amountPaid < inv.amount && (
-                              <span class="text-[11px] text-error">
-                                {formatCurrency(inv.amount - inv.amountPaid)} owed
-                              </span>
-                            )}
+                            </div>
                           </div>
                         </div>
-                      ) : (
-                        <span class="text-on-surface-variant text-body-sm">—</span>
-                      )}
-                    </td>
-                    <td class="px-lg py-md font-body-md text-on-surface-variant">{inv.dueDate}</td>
-                    <td class="px-lg py-md">
-                      <StatusChip status={inv.status} />
-                    </td>
-                    <td class="px-lg py-md">
-                      <div class="flex items-center gap-xs flex-wrap">
-                        {inv.status !== 'Paid' && (
-                          markingChoiceId === inv.id ? (
-                            <div class="flex items-center gap-xs">
-                              <select
-                                autoFocus
-                                value={pendingMethod}
-                                onChange={(e) => setPendingMethod(e.target.value)}
-                                class="border border-outline-variant rounded-lg px-xs py-1 text-xs bg-surface text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                              >
-                                <option value="">Method…</option>
-                                {PAYMENT_METHODS.map((m) => (
-                                  <option key={m} value={m}>{m}</option>
-                                ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => pendingMethod && handleMarkAsPaid(inv, pendingMethod)}
-                                disabled={markingPaidId === inv.id || !pendingMethod}
-                                title="Confirm full payment received"
-                                class="flex items-center text-secondary hover:bg-secondary-container/10 p-1 rounded-lg border border-secondary/20 disabled:opacity-40"
-                              >
-                                <span class="material-symbols-outlined text-[16px]">
-                                  {markingPaidId === inv.id ? 'hourglass_empty' : 'check'}
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => { setMarkingChoiceId(null); setPendingMethod(''); }}
-                                title="Cancel"
-                                class="text-on-surface-variant hover:bg-surface-container-high p-1 rounded-lg"
-                              >
-                                <span class="material-symbols-outlined text-[16px]">close</span>
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => { setMarkingChoiceId(inv.id); setPendingMethod(''); }}
-                              title="Record full payment received"
-                              class="flex items-center gap-xs text-secondary hover:bg-secondary-container/10 px-sm py-1 rounded-lg transition-colors font-label-md text-xs active:scale-95 border border-secondary/20 disabled:opacity-50"
-                            >
-                              <span class="material-symbols-outlined text-[16px]">check_circle</span>
-                              Mark Paid
-                            </button>
-                          )
+                      </td>
+                      <td class="px-lg py-md font-body-md text-on-surface-variant font-medium">
+                        {group.feeTypesList || '—'}
+                      </td>
+                      <td class="px-lg py-md font-body-md text-on-surface">{group.classSec}</td>
+                      <td class="px-lg py-md font-body-md font-bold text-on-surface">
+                        {formatCurrency(group.totalAmount)}
+                      </td>
+                      <td class="px-lg py-md">
+                        {group.totalPaid > 0 ? (
+                          <div>
+                            <p class="font-body-md font-bold text-on-surface">{formatCurrency(group.totalPaid)}</p>
+                            {group.totalPaid < group.totalAmount && (
+                              <p class="text-[11px] text-error font-medium">
+                                {formatCurrency(group.totalAmount - group.totalPaid)} owed
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span class="text-on-surface-variant text-body-sm">—</span>
                         )}
+                      </td>
+                      <td class="px-lg py-md font-body-md text-on-surface-variant">{group.primaryDueDate}</td>
+                      <td class="px-lg py-md">
+                        <StatusChip status={group.overallStatus} />
+                      </td>
+                      <td class="px-lg py-md">
                         <button
-                          onClick={() => openEditModal(inv)}
-                          title="Edit invoice"
-                          class="flex items-center gap-xs text-on-surface-variant hover:bg-surface-container-high px-sm py-1 rounded-lg transition-colors font-label-md text-xs active:scale-95"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedStudentGroup(group);
+                          }}
+                          class="text-xs text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 px-md py-1.5 rounded-lg font-label-md flex items-center gap-1 transition-all active:scale-95 shadow-2xs"
                         >
-                          <span class="material-symbols-outlined text-[16px]">edit</span>
-                          Edit
+                          <span class="material-symbols-outlined text-[16px]">visibility</span>
+                          View Breakdown
                         </button>
-                        <button
-                          onClick={() => openNoticeModal(inv)}
-                          title="Generate Smart AI Parent Notice"
-                          class="flex items-center gap-xs text-primary hover:bg-primary-fixed px-sm py-1 rounded-lg transition-colors font-label-md text-xs active:scale-95 border border-primary/20"
-                        >
-                          <span class="material-symbols-outlined text-[16px]">auto_awesome</span>
-                          AI Notice
-                        </button>
-                        {inv.status !== 'Paid' && (
-                          <button
-                            onClick={() => handleSendReminder(inv.id)}
-                            title="Send Quick Reminder"
-                            class="flex items-center gap-xs text-on-surface-variant hover:bg-surface-container-high px-sm py-1 rounded-lg transition-colors font-label-md text-xs active:scale-95"
-                          >
-                            <span class="material-symbols-outlined text-[16px]">send</span>
-                            Reminder
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -799,6 +943,23 @@ export default function Fees() {
                   placeholder="e.g. Grade 10 - Section A"
                   class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
                 />
+              </div>
+
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Term (optional)</label>
+                <input
+                  type="text"
+                  list="fees-known-terms"
+                  value={form.term}
+                  onChange={(e) => handleFormChange('term', e.target.value)}
+                  placeholder="First Term 2025/2026"
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                />
+                <datalist id="fees-known-terms">
+                  {Array.from(new Set(feeStructures.map((s) => s.term).filter(Boolean))).map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
               </div>
 
               <div>
