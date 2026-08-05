@@ -3,23 +3,35 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { askScholarBot } from '../../lib/groq';
 import FormattedMarkdown from './FormattedMarkdown';
+import { useAuth } from '../../context/AuthContext';
+import { isStudentInTeacherClasses } from '../../utils/classUtils';
 
 const INITIAL_MESSAGES = [
   {
     id: 1,
     sender: 'bot',
-    text: 'Hello! I am ScholarBot, your AI Admin Assistant for Scholarq. How can I help you optimize school operations today?'
+    text: 'Hello! I am ScholarBot, your AI Assistant for Scholarq. How can I help you today?'
   }
 ];
 
-const QUICK_PROMPTS = [
+const ADMIN_PROMPTS = [
   '💡 Tips to boost fee collection rate',
   '📢 Draft PTA meeting announcement',
   '📊 Attendance summary & at-risk report',
   '📝 Summary of fee receivables'
 ];
 
+const TEACHER_PROMPTS = [
+  '📊 Class attendance summary',
+  '📢 Draft class announcement',
+  '📝 Attendance & conduct tips',
+  '❓ Student absence guidelines'
+];
+
 export default function ScholarBot() {
+  const { userProfile } = useAuth();
+  const isTeacher = userProfile?.role === 'teacher';
+
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [input, setInput] = useState('');
@@ -70,14 +82,19 @@ export default function ScholarBot() {
     const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
       setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-    const unsubFees = onSnapshot(collection(db, 'fees'), (snap) => {
-      setFees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+
+    let unsubFees = () => {};
+    if (!isTeacher) {
+      unsubFees = onSnapshot(collection(db, 'fees'), (snap) => {
+        setFees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+    }
+
     return () => {
       unsubStudents();
       unsubFees();
     };
-  }, []);
+  }, [isTeacher]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -89,6 +106,8 @@ export default function ScholarBot() {
     }
   }, [messages, isOpen]);
 
+  const quickPrompts = isTeacher ? TEACHER_PROMPTS : ADMIN_PROMPTS;
+
   const handleSend = async (textToSend) => {
     const queryText = (textToSend || input).trim();
     if (!queryText || loading) return;
@@ -99,30 +118,42 @@ export default function ScholarBot() {
     setLoading(true);
 
     // Build real live school dataset
-    const schoolData = {
-      totalStudents: students.length,
-      studentsList: students.map(
-        (s) => `- ${s.name || 'Unnamed'} (${s.grade || ''} ${s.section || ''}): Attendance ${s.attendance || 0}%, Fee ${s.feeStatus || 'Pending'}, Guardian: ${s.guardian || 'N/A'}`
-      ),
-      totalCollected: fees
-        .filter((f) => f.status === 'Paid')
-        .reduce((sum, f) => sum + (f.amount || 0), 0),
-      totalOutstanding: fees
-        .filter((f) => f.status !== 'Paid')
-        .reduce((sum, f) => sum + (f.amount || 0), 0),
-      overdueInvoices: fees
-        .filter((f) => f.status === 'Overdue')
-        .map((f) => `- ${f.studentName} (${f.classSec}): $${f.amount} overdue since ${f.dueDate}`),
-      pendingInvoices: fees
-        .filter((f) => f.status === 'Pending')
-        .map((f) => `- ${f.studentName} (${f.classSec}): $${f.amount} pending due ${f.dueDate}`)
-    };
+    let schoolData = {};
+    if (isTeacher) {
+      const teacherStudents = students.filter(s => isStudentInTeacherClasses(s, userProfile?.assignedClasses || ['Class 10A']));
+      schoolData = {
+        totalStudents: teacherStudents.length,
+        studentsList: teacherStudents.map(
+          (s) => `- ${s.name || 'Unnamed'} (${s.grade || ''} ${s.section || ''}): Attendance ${s.attendance || 0}%, Guardian: ${s.guardian || 'N/A'}`
+        )
+      };
+    } else {
+      schoolData = {
+        totalStudents: students.length,
+        studentsList: students.map(
+          (s) => `- ${s.name || 'Unnamed'} (${s.grade || ''} ${s.section || ''}): Attendance ${s.attendance || 0}%, Fee ${s.feeStatus || 'Pending'}, Guardian: ${s.guardian || 'N/A'}`
+        ),
+        totalCollected: fees
+          .filter((f) => f.status === 'Paid')
+          .reduce((sum, f) => sum + (f.amount || 0), 0),
+        totalOutstanding: fees
+          .filter((f) => f.status !== 'Paid')
+          .reduce((sum, f) => sum + (f.amount || 0), 0),
+        overdueInvoices: fees
+          .filter((f) => f.status === 'Overdue')
+          .map((f) => `- ${f.studentName} (${f.classSec}): $${f.amount} overdue since ${f.dueDate}`),
+        pendingInvoices: fees
+          .filter((f) => f.status === 'Pending')
+          .map((f) => `- ${f.studentName} (${f.classSec}): $${f.amount} pending due ${f.dueDate}`)
+      };
+    }
 
     try {
       const botResponse = await askScholarBot({
         query: queryText,
         history: messages,
-        schoolData
+        schoolData,
+        isTeacher
       });
 
       setMessages((prev) => [
@@ -277,7 +308,7 @@ export default function ScholarBot() {
           {/* Quick Prompts */}
           {messages.length <= 2 && (
             <div class="px-md py-xs bg-surface-container-low border-t border-outline-variant/30 flex items-center gap-xs overflow-x-auto scrollbar-hide">
-              {QUICK_PROMPTS.map((qp, idx) => (
+              {quickPrompts.map((qp, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleSend(qp)}
@@ -295,7 +326,7 @@ export default function ScholarBot() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyPress}
-              placeholder="Ask ScholarBot about real students or fees..."
+              placeholder={isTeacher ? "Ask ScholarBot about your class or attendance..." : "Ask ScholarBot about real students or fees..."}
               rows={1}
               class="flex-1 bg-surface border border-outline-variant rounded-xl px-md py-2 text-body-md text-on-surface outline-none focus:ring-2 focus:ring-primary/30 resize-none max-h-24"
             />

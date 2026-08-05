@@ -11,10 +11,13 @@ export default function Topbar({ searchFilter, onSearchChange, selectedClass, on
   const [menuOpen, setMenuOpen] = useState(false);
 
   const profile = settings?.profileData;
-  const displayName = profile?.name || userProfile?.email || currentUser?.email || 'Account';
-  const displayRole = profile?.title || (userProfile?.role
-    ? userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)
-    : 'Principal');
+  const isTeacher = userProfile?.role === 'teacher';
+
+  const displayName = userProfile?.name || (isTeacher ? 'Teacher' : profile?.name) || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User';
+  const displayRole = isTeacher
+    ? (userProfile?.title || `Teacher (${(userProfile?.assignedClasses || ['Class 10A']).join(', ')})`)
+    : (userProfile?.title || profile?.title || 'Principal & Chief Administrator');
+  const avatarUrl = userProfile?.avatar || (!isTeacher ? profile?.avatar : null);
   const initial = displayName.charAt(0).toUpperCase();
 
   const handleLogout = async () => {
@@ -98,9 +101,9 @@ export default function Topbar({ searchFilter, onSearchChange, selectedClass, on
                 </p>
               )}
             </div>
-            {profile?.avatar ? (
+            {avatarUrl ? (
               <img
-                src={profile.avatar}
+                src={avatarUrl}
                 alt={displayName}
                 class="w-10 h-10 rounded-full object-cover border-2 border-primary-fixed-dim"
               />

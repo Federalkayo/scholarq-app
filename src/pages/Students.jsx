@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext, useLocation, useSearchParams } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -7,6 +7,8 @@ import { generateReportComment } from '../lib/groq';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
 import ParentNoticeModal from '../components/ui/ParentNoticeModal';
+import { useAuth } from '../context/AuthContext';
+import { isStudentInTeacherClasses } from '../utils/classUtils';
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
@@ -30,6 +32,9 @@ const emptyForm = {
 };
 
 export default function Students() {
+  const { userProfile } = useAuth();
+  const isTeacher = userProfile?.role === 'teacher';
+
   const { searchQuery } = useOutletContext();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -120,7 +125,13 @@ export default function Students() {
     setAiCopied(false);
   }, [selectedStudent]);
 
-  const filteredStudents = students.filter((s) => {
+  // Filter students for teacher assigned classes
+  const teacherAssignedStudents = useMemo(() => {
+    if (!isTeacher) return students;
+    return students.filter((s) => isStudentInTeacherClasses(s, userProfile?.assignedClasses || ['Class 10A']));
+  }, [students, isTeacher, userProfile]);
+
+  const filteredStudents = teacherAssignedStudents.filter((s) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -131,12 +142,12 @@ export default function Students() {
     );
   });
 
-  const totalStudents = students.length;
+  const totalStudents = teacherAssignedStudents.length;
   const avgAttendance =
     totalStudents > 0
-      ? (students.reduce((sum, s) => sum + s.attendance, 0) / totalStudents).toFixed(1)
+      ? (teacherAssignedStudents.reduce((sum, s) => sum + s.attendance, 0) / totalStudents).toFixed(1)
       : '0.0';
-  const overdueCount = students.filter((s) => s.feeStatus === 'Overdue').length;
+  const overdueCount = teacherAssignedStudents.filter((s) => s.feeStatus === 'Overdue').length;
 
   const openAddModal = () => {
     setForm(emptyForm);
@@ -311,20 +322,31 @@ export default function Students() {
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-lg mb-xl">
         <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Total Enrollment</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">
+            {isTeacher ? 'Assigned Enrollment' : 'Total Enrollment'}
+          </p>
           <span class="font-display-lg text-display-lg text-on-surface">{totalStudents}</span>
         </div>
         <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
           <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Avg Attendance</p>
           <span class="font-display-lg text-display-lg text-on-surface">{avgAttendance}%</span>
         </div>
+        {!isTeacher ? (
+          <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Overdue Fees</p>
+            <span class="font-display-lg text-display-lg text-error">{overdueCount}</span>
+          </div>
+        ) : (
+          <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Assigned Classes</p>
+            <span class="font-display-lg text-display-lg text-secondary">
+              {(userProfile?.assignedClasses || []).length}
+            </span>
+          </div>
+        )}
         <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Overdue Fees</p>
-          <span class="font-display-lg text-display-lg text-error">{overdueCount}</span>
-        </div>
-        <div class="bg-surface-container-lowest p-lg rounded-xl shadow-sm border border-outline-variant/30">
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">New Inquiries</p>
-          <span class="font-label-md text-label-md text-on-surface-variant">Not tracked yet</span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Roster Status</p>
+          <span class="font-label-md text-label-md text-secondary font-bold">Active Roster</span>
         </div>
       </div>
 
@@ -345,7 +367,9 @@ export default function Students() {
                   <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Student</th>
                   <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Class / Section</th>
                   <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Guardian Contact</th>
-                  <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Fee Status</th>
+                  {!isTeacher && (
+                    <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Fee Status</th>
+                  )}
                   <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Attendance</th>
                   <th class="px-lg py-md font-label-sm text-label-sm text-on-surface-variant uppercase">Action</th>
                 </tr>
@@ -374,9 +398,11 @@ export default function Students() {
                       <p class="font-body-md text-body-md text-on-surface">{st.guardian}</p>
                       <p class="text-xs text-on-surface-variant">{st.guardianContact}</p>
                     </td>
-                    <td class="px-lg py-md">
-                      <StatusChip status={st.feeStatus} />
-                    </td>
+                    {!isTeacher && (
+                      <td class="px-lg py-md">
+                        <StatusChip status={st.feeStatus} />
+                      </td>
+                    )}
                     <td class="px-lg py-md">
                       <div class="flex items-center gap-sm">
                         <div class="w-16 h-2 bg-surface-container-high rounded-full overflow-hidden">
@@ -450,10 +476,12 @@ export default function Students() {
                 <span class="text-on-surface-variant font-label-md">Contact</span>
                 <span class="font-bold text-on-surface">{selectedStudent.guardianContact}</span>
               </div>
-              <div class="flex justify-between py-xs border-b border-outline-variant/30">
-                <span class="text-on-surface-variant font-label-md">Fee Status</span>
-                <StatusChip status={selectedStudent.feeStatus} />
-              </div>
+              {!isTeacher && (
+                <div class="flex justify-between py-xs border-b border-outline-variant/30">
+                  <span class="text-on-surface-variant font-label-md">Fee Status</span>
+                  <StatusChip status={selectedStudent.feeStatus} />
+                </div>
+              )}
               <div class="flex justify-between py-xs border-b border-outline-variant/30">
                 <span class="text-on-surface-variant font-label-md">Attendance Rate</span>
                 <span class="font-bold text-on-surface">{selectedStudent.attendance}%</span>
@@ -657,18 +685,20 @@ export default function Students() {
                 />
               </div>
 
-              <div>
-                <label class="block font-label-md text-on-surface-variant mb-xs">Fee Status</label>
-                <select
-                  value={form.feeStatus}
-                  onChange={(e) => handleFormChange('feeStatus', e.target.value)}
-                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
-                >
-                  <option value="Paid">Paid</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Overdue">Overdue</option>
-                </select>
-              </div>
+              {!isTeacher && (
+                <div>
+                  <label class="block font-label-md text-on-surface-variant mb-xs">Fee Status</label>
+                  <select
+                    value={form.feeStatus}
+                    onChange={(e) => handleFormChange('feeStatus', e.target.value)}
+                    class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                  >
+                    <option value="Paid">Paid</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Overdue">Overdue</option>
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label class="block font-label-md text-on-surface-variant mb-xs">Attendance %</label>

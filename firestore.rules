@@ -3,29 +3,32 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if false;
+      allow read, write: if true;
+    }
+
+    match /inviteCodes/{code} {
+      allow read, write: if true;
     }
 
     match /students/{studentId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
 
     match /fees/{invoiceId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
 
     match /feeStructures/{structureId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
 
     match /attendance/{recordId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
 
     // Portal Settings collection
     match /settings/{settingId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
 
   }

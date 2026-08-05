@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, Navigate } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
 import ParentNoticeModal from '../components/ui/ParentNoticeModal';
@@ -37,6 +38,11 @@ const emptyForm = {
 };
 
 export default function Fees() {
+  const { userProfile } = useAuth();
+  if (userProfile?.role === 'teacher') {
+    return <Navigate to="/" replace />;
+  }
+
   const { searchQuery } = useOutletContext();
   const [invoices, setInvoices] = useState([]);
   const [students, setStudents] = useState([]);

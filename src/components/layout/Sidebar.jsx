@@ -3,8 +3,9 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 export default function Sidebar() {
-  const { logout } = useAuth();
+  const { userProfile, logout } = useAuth();
   const navigate = useNavigate();
+  const isTeacher = userProfile?.role === 'teacher';
 
   const handleNewRegistration = () => {
     navigate('/students?register=true', { state: { openNewRegistration: true } });
@@ -14,7 +15,7 @@ export default function Sidebar() {
     { path: '/', label: 'Dashboard', icon: 'dashboard' },
     { path: '/students', label: 'Students', icon: 'group' },
     { path: '/attendance', label: 'Attendance', icon: 'calendar_today' },
-    { path: '/fees', label: 'Fees', icon: 'payments' },
+    ...(!isTeacher ? [{ path: '/fees', label: 'Fees', icon: 'payments' }] : []),
     { path: '/reports', label: 'Reports', icon: 'assessment' }
   ];
 
@@ -26,8 +27,16 @@ export default function Sidebar() {
   return (
     <aside class="fixed left-0 top-0 h-full w-sidebar-width bg-surface-container-lowest border-r border-outline-variant flex flex-col p-md z-50">
       <div class="mb-xl px-md">
-        <h1 class="text-headline-sm font-headline-sm text-primary">EduAdmin Pro</h1>
-        <p class="text-label-sm text-on-surface-variant">Principal Portal</p>
+        <div class="flex items-center gap-xs mb-1">
+          <span class="material-symbols-outlined text-primary text-[22px]">school</span>
+          <h1 class="text-headline-sm font-headline-sm text-primary">EduAdmin Pro</h1>
+        </div>
+        <div class="flex items-center gap-xs">
+          <span className={`w-2 h-2 rounded-full ${isTeacher ? 'bg-secondary' : 'bg-primary'}`}></span>
+          <p class="text-label-sm text-on-surface-variant font-bold">
+            {isTeacher ? 'Teacher Portal' : 'Principal Portal'}
+          </p>
+        </div>
       </div>
 
       <nav class="flex-1 space-y-xs">
@@ -58,13 +67,15 @@ export default function Sidebar() {
       </nav>
 
       <div class="mt-auto space-y-xs">
-        <button
-          onClick={handleNewRegistration}
-          class="w-full bg-primary text-on-primary py-sm px-md rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm mb-lg cursor-pointer flex items-center justify-center gap-xs"
-        >
-          <span class="material-symbols-outlined text-[18px]">person_add</span>
-          New Registration
-        </button>
+        {!isTeacher && (
+          <button
+            onClick={handleNewRegistration}
+            class="w-full bg-primary text-on-primary py-sm px-md rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm mb-lg cursor-pointer flex items-center justify-center gap-xs"
+          >
+            <span class="material-symbols-outlined text-[18px]">person_add</span>
+            New Registration
+          </button>
+        )}
 
         <NavLink
           to="/settings"

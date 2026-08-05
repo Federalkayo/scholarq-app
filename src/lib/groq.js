@@ -37,7 +37,7 @@ Write a warm, professional, 2-3 sentence report card comment focused on attendan
   return data.choices[0].message.content.trim();
 }
 
-export async function generatePrincipalSummary({ totalStudents, todayRate, sectionRows = [], fees = [] }) {
+export async function generatePrincipalSummary({ totalStudents, todayRate, sectionRows = [], fees = [], isTeacher = false }) {
   if (!GROQ_API_KEY) {
     throw new Error('VITE_GROQ_API_KEY is missing. Please restart your Vite dev server to load the .env file.');
   }
@@ -46,11 +46,24 @@ export async function generatePrincipalSummary({ totalStudents, todayRate, secti
     .map((s) => `- ${s.section}: ${s.studentCount} students, ${s.attendancePct}% attendance today`)
     .join('\n');
 
-  const totalInvoices = fees.length;
-  const paidInvoices = fees.filter((f) => f.status === 'Paid').length;
-  const overdueInvoices = fees.filter((f) => f.status === 'Overdue').length;
+  let prompt = '';
+  if (isTeacher) {
+    prompt = `You are an AI Class Assistant providing a daily briefing for a Teacher at Scholarq (EduAdmin Pro).
 
-  const prompt = `You are an AI Executive Assistant providing a daily institutional summary for Dr. Sarah J, Principal of EduAdmin Pro.
+Here are the live stats for the teacher's assigned class(es):
+- Total Assigned Students: ${totalStudents}
+- Today's Class Attendance Rate: ${todayRate}%
+- Class / Section Attendance Breakdown:
+${sectionDetails || 'No section breakdown available'}
+
+STRICT DATA PRIVACY INSTRUCTION: Do NOT mention any fees, finances, or payment statuses.
+Task: Write a concise, executive 3-4 sentence class briefing. Summarize overall class attendance health, highlight any attendance concerns, and offer a quick tip for student engagement. Be direct, encouraging, and professional. Output only the report body text.`;
+  } else {
+    const totalInvoices = fees.length;
+    const paidInvoices = fees.filter((f) => f.status === 'Paid').length;
+    const overdueInvoices = fees.filter((f) => f.status === 'Overdue').length;
+
+    prompt = `You are an AI Executive Assistant providing a daily institutional summary for Dr. Sarah J, Principal of EduAdmin Pro.
 
 Here are the live institutional stats:
 - Total Enrolled Students: ${totalStudents}
@@ -60,6 +73,7 @@ ${sectionDetails || 'No section breakdown available'}
 - Fee Collection Status: ${paidInvoices} paid, ${overdueInvoices} overdue out of ${totalInvoices} total records.
 
 Task: Write a concise, executive 3-4 sentence principal briefing. Summarize overall operational health, highlight any section or attendance concerns, and note financial collection status. Be direct, professional, and encouraging. Output only the report body text.`;
+  }
 
   const response = await fetch(GROQ_URL, {
     method: 'POST',
@@ -122,14 +136,20 @@ Task: Write a concise, professional message (2-4 sentences) tailored to the spec
   return data.choices[0].message.content.trim();
 }
 
-export async function askScholarBot({ query, history = [], schoolData = null }) {
+export async function askScholarBot({ query, history = [], schoolData = null, isTeacher = false }) {
   if (!GROQ_API_KEY) {
     throw new Error('VITE_GROQ_API_KEY is missing. Please restart your Vite dev server to load the .env file.');
   }
 
   let dataContext = 'No live database records retrieved yet.';
   if (schoolData) {
-    dataContext = `LIVE SCHOOL DATABASE CONTEXT (Current Real-time Data):
+    if (isTeacher) {
+      dataContext = `LIVE ASSIGNED CLASS DATABASE CONTEXT (Current Real-time Data):
+- Teacher Assigned Students Total: ${schoolData.totalStudents || 0}
+- Assigned Class Roster & Attendance:
+${schoolData.studentsList?.length > 0 ? schoolData.studentsList.join('\n') : 'No student records in assigned classes'}`;
+    } else {
+      dataContext = `LIVE SCHOOL DATABASE CONTEXT (Current Real-time Data):
 - Enrolled Students Total: ${schoolData.totalStudents || 0}
 - Student Roster & Records:
 ${schoolData.studentsList?.length > 0 ? schoolData.studentsList.join('\n') : 'No student records in database'}
@@ -141,11 +161,24 @@ ${schoolData.studentsList?.length > 0 ? schoolData.studentsList.join('\n') : 'No
 ${schoolData.overdueInvoices?.length > 0 ? schoolData.overdueInvoices.join('\n') : 'No overdue invoices'}
   * Pending Invoices (${schoolData.pendingInvoices?.length || 0} records):
 ${schoolData.pendingInvoices?.length > 0 ? schoolData.pendingInvoices.join('\n') : 'No pending invoices'}`;
+    }
   }
 
   const systemMessage = {
     role: 'system',
-    content: `You are ScholarBot, the intelligent AI Administrative Assistant for Scholarq (EduAdmin Pro), a school management platform.
+    content: isTeacher
+      ? `You are ScholarBot, the intelligent AI Assistant for Teachers at Scholarq (EduAdmin Pro).
+
+${dataContext}
+
+CRITICAL PRIVACY & ROLE BOUNDARY INSTRUCTIONS:
+1. You are assisting a Teacher. Teachers have access ONLY to their assigned class(es) and student attendance/performance.
+2. TEACHERS MUST NOT SEE, CALCULATE, OR DISCUSS ANY FEES, FINANCIAL DATA, TUITION, INVOICES, OR PAYMENTS.
+3. Under NO circumstances should you mention, hint at, calculate, or reveal any fee figures, invoice statuses, or financial statistics.
+4. If the user asks about fees, tuition, account balances, or financial reports, politely refuse and state: "As a teacher, fee and financial information is restricted to school administrators. Please reach out to the school administration for fee inquiries."
+5. Answer all questions using only the LIVE ASSIGNED CLASS DATABASE CONTEXT provided above.
+6. Be encouraging, clear, helpful, and professional.`
+      : `You are ScholarBot, the intelligent AI Administrative Assistant for Scholarq (EduAdmin Pro), a school management platform.
 
 ${dataContext}
 

@@ -1,26 +1,49 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
+import { createInviteCode, getInviteCodes } from '../services/inviteService';
+import { db } from '../firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 export default function Settings() {
+  const { userProfile, currentUser, refreshProfile } = useAuth();
+  const isTeacher = userProfile?.role === 'teacher';
+
   const { settings, saveSettings, updateAvatar, exportDatabaseBackup } = useSettings();
   const [activeTab, setActiveTab] = useState('profile');
   const [savedNotice, setSavedNotice] = useState(false);
   const fileInputRef = useRef(null);
 
   // Form State
-  const [profileData, setProfileData] = useState(settings.profileData);
+  const [profileData, setProfileData] = useState(() => ({
+    name: userProfile?.name || settings.profileData.name || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User',
+    email: userProfile?.email || currentUser?.email || settings.profileData.email || '',
+    title: userProfile?.title || (isTeacher ? `Teacher (${(userProfile?.assignedClasses || ['Class 10A']).join(', ')})` : settings.profileData.title || 'Principal & Chief Administrator'),
+    phone: userProfile?.phone || settings.profileData.phone || '',
+    bio: userProfile?.bio || settings.profileData.bio || '',
+    avatar: userProfile?.avatar || settings.profileData.avatar || ''
+  }));
   const [schoolData, setSchoolData] = useState(settings.schoolData);
   const [notifications, setNotifications] = useState(settings.notifications);
   const [security, setSecurity] = useState(settings.security);
   const [theme, setTheme] = useState(settings.theme);
 
   useEffect(() => {
-    setProfileData(settings.profileData);
+    if (userProfile || currentUser) {
+      setProfileData({
+        name: userProfile?.name || settings.profileData.name || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User',
+        email: userProfile?.email || currentUser?.email || settings.profileData.email || '',
+        title: userProfile?.title || (isTeacher ? `Teacher (${(userProfile?.assignedClasses || ['Class 10A']).join(', ')})` : settings.profileData.title || 'Principal & Chief Administrator'),
+        phone: userProfile?.phone || settings.profileData.phone || '',
+        bio: userProfile?.bio || settings.profileData.bio || '',
+        avatar: userProfile?.avatar || settings.profileData.avatar || ''
+      });
+    }
     setSchoolData(settings.schoolData);
     setNotifications(settings.notifications);
     setSecurity(settings.security);
     setTheme(settings.theme);
-  }, [settings]);
+  }, [settings, userProfile, currentUser, isTeacher]);
 
   const handleSave = async (e) => {
     if (e) e.preventDefault();
@@ -31,6 +54,23 @@ export default function Settings() {
       security,
       theme
     });
+
+    if (currentUser?.uid) {
+      try {
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          name: profileData.name,
+          email: profileData.email,
+          title: profileData.title,
+          phone: profileData.phone,
+          bio: profileData.bio,
+          avatar: profileData.avatar
+        }, { merge: true });
+        if (refreshProfile) await refreshProfile();
+      } catch (err) {
+        console.error('Failed to sync profile to users collection:', err);
+      }
+    }
+
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 3000);
   };
@@ -45,6 +85,10 @@ export default function Settings() {
       const dataUrl = await updateAvatar(file);
       if (dataUrl) {
         setProfileData((prev) => ({ ...prev, avatar: dataUrl }));
+        if (currentUser?.uid) {
+          await setDoc(doc(db, 'users', currentUser.uid), { avatar: dataUrl }, { merge: true });
+          if (refreshProfile) await refreshProfile();
+        }
         setSavedNotice(true);
         setTimeout(() => setSavedNotice(false), 3000);
       }
@@ -69,8 +113,45 @@ export default function Settings() {
     saveSettings({ theme: updated });
   };
 
+  const [inviteCodesList, setInviteCodesList] = useState([]);
+  const [newCodeSuccess, setNewCodeSuccess] = useState(null);
+  const [selectedHours, setSelectedHours] = useState(48);
+  const [selectedClass, setSelectedClass] = useState('Class 10A');
+  const [generatingCode, setGeneratingCode] = useState(false);
+
+  const fetchCodes = async () => {
+    const codes = await getInviteCodes();
+    setInviteCodesList(codes);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'passcodes') {
+      fetchCodes();
+    }
+  }, [activeTab]);
+
+  const handleGenerateCode = async (e) => {
+    e.preventDefault();
+    setGeneratingCode(true);
+    try {
+      const created = await createInviteCode({
+        role: 'teacher',
+        hoursValid: selectedHours,
+        assignedClasses: [selectedClass],
+        createdBy: userProfile?.email || 'admin'
+      });
+      setNewCodeSuccess(created);
+      await fetchCodes();
+    } catch (err) {
+      console.error('Failed to create invite code:', err);
+    } finally {
+      setGeneratingCode(false);
+    }
+  };
+
   const tabs = [
     { id: 'profile', label: 'Profile', icon: 'person' },
+    ...(!isTeacher ? [{ id: 'passcodes', label: 'Teacher Passcodes', icon: 'key' }] : []),
     { id: 'school', label: 'School Info', icon: 'school' },
     { id: 'notifications', label: 'Notifications', icon: 'notifications' },
     { id: 'security', label: 'Security', icon: 'security' },
@@ -92,7 +173,7 @@ export default function Settings() {
         <div>
           <h2 class="font-display-lg text-display-lg text-primary">Portal Settings</h2>
           <p class="font-body-md text-body-md text-on-surface-variant mt-1">
-            Manage administrative preferences, school details, security, and system configuration.
+            Manage profile preferences, school details, security, and access settings.
           </p>
         </div>
         <button
@@ -112,9 +193,9 @@ export default function Settings() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              class={`flex items-center gap-xs px-lg py-md font-label-md transition-all border-b-2 whitespace-nowrap cursor-pointer ${
+              class={`flex items-center gap-xs px-lg py-md font-label-md border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                 isActive
-                  ? 'border-primary text-primary font-bold bg-primary/5'
+                  ? 'border-primary text-primary font-bold'
                   : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
               }`}
             >
@@ -127,11 +208,12 @@ export default function Settings() {
 
       {/* Tab Panels */}
       <div class="bg-surface-container-lowest p-xl rounded-xl shadow-sm border border-outline-variant max-w-4xl">
+
         {/* Profile Settings */}
         {activeTab === 'profile' && (
           <form onSubmit={handleSave} class="space-y-lg animate-fadeIn">
             <h3 class="font-headline-sm text-primary border-b border-outline-variant/30 pb-sm">
-              Principal Profile Settings
+              {isTeacher ? 'Teacher Profile Settings' : 'Principal Profile Settings'}
             </h3>
             <div class="flex items-center gap-lg">
               <div class="relative">
@@ -186,7 +268,7 @@ export default function Settings() {
               </div>
               <div>
                 <label class="block text-label-sm text-on-surface-variant uppercase font-bold mb-xs">
-                  Administrative Title
+                  {isTeacher ? 'Role / Title' : 'Administrative Title'}
                 </label>
                 <input
                   type="text"
@@ -197,7 +279,7 @@ export default function Settings() {
               </div>
               <div>
                 <label class="block text-label-sm text-on-surface-variant uppercase font-bold mb-xs">
-                  Office Phone
+                  Contact Phone
                 </label>
                 <input
                   type="text"
@@ -210,7 +292,7 @@ export default function Settings() {
 
             <div>
               <label class="block text-label-sm text-on-surface-variant uppercase font-bold mb-xs">
-                Administrative Bio
+                {isTeacher ? 'Teacher Bio' : 'Administrative Bio'}
               </label>
               <textarea
                 rows="3"
@@ -220,6 +302,167 @@ export default function Settings() {
               ></textarea>
             </div>
           </form>
+        )}
+
+        {/* Teacher Passcodes Tab */}
+        {activeTab === 'passcodes' && (
+          <div class="space-y-lg animate-fadeIn">
+            <div class="border-b border-outline-variant/30 pb-sm">
+              <h3 class="font-headline-sm text-primary">Teacher Passcode Management</h3>
+              <p class="text-body-md text-on-surface-variant mt-1">
+                Generate single-use invitation passcodes for teachers. Passcodes expire automatically after 24–72 hours.
+              </p>
+            </div>
+
+            {/* Passcode Generator Form */}
+            <form onSubmit={handleGenerateCode} class="bg-surface-container-low p-md rounded-xl border border-outline-variant/60 space-y-md">
+              <h4 class="font-label-md font-bold uppercase tracking-wider text-primary flex items-center gap-xs">
+                <span class="material-symbols-outlined text-[20px]">add_moderator</span>
+                Generate New Invitation Passcode
+              </h4>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+                <div>
+                  <label class="block text-label-sm text-on-surface-variant uppercase font-bold mb-xs">
+                    Expiration Window
+                  </label>
+                  <select
+                    value={selectedHours}
+                    onChange={(e) => setSelectedHours(Number(e.target.value))}
+                    class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg px-md py-sm text-body-md outline-none text-on-surface cursor-pointer"
+                  >
+                    <option value={24}>24 Hours (1 Day)</option>
+                    <option value={48}>48 Hours (2 Days)</option>
+                    <option value={72}>72 Hours (3 Days)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-label-sm text-on-surface-variant uppercase font-bold mb-xs">
+                    Assigned Primary Class
+                  </label>
+                  <select
+                    value={selectedClass}
+                    onChange={(e) => setSelectedClass(e.target.value)}
+                    class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg px-md py-sm text-body-md outline-none text-on-surface cursor-pointer"
+                  >
+                    <option value="Class 10A">Class 10A</option>
+                    <option value="Class 10B">Class 10B</option>
+                    <option value="Class 11A">Class 11A</option>
+                    <option value="Class 11B">Class 11B</option>
+                    <option value="Class 12A">Class 12A</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={generatingCode}
+                  class="bg-primary text-white px-lg py-sm rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm flex items-center gap-xs cursor-pointer disabled:opacity-50"
+                >
+                  <span class="material-symbols-outlined text-[18px]">key</span>
+                  {generatingCode ? 'Generating...' : 'Generate Teacher Passcode'}
+                </button>
+              </div>
+            </form>
+
+            {/* Generated Code Alert */}
+            {newCodeSuccess && (
+              <div class="bg-secondary-container/60 border border-secondary text-on-secondary-container p-md rounded-xl flex flex-wrap items-center justify-between gap-md animate-fadeIn">
+                <div>
+                  <span class="text-xs uppercase font-bold tracking-wider text-secondary flex items-center gap-xs">
+                    <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                    Passcode Created Successfully
+                  </span>
+                  <div class="text-2xl font-mono font-bold tracking-widest text-primary mt-1">
+                    {newCodeSuccess.code}
+                  </div>
+                  <p class="text-xs text-on-surface-variant mt-1">
+                    Valid for {selectedHours} hours. Give this passcode to the teacher to complete their sign-up.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(newCodeSuccess.code);
+                    alert(`Copied passcode ${newCodeSuccess.code} to clipboard!`);
+                  }}
+                  class="bg-secondary text-on-secondary px-md py-xs rounded-lg font-label-md hover:opacity-90 flex items-center gap-xs cursor-pointer shadow-xs"
+                >
+                  <span class="material-symbols-outlined text-[16px]">content_copy</span>
+                  Copy Code
+                </button>
+              </div>
+            )}
+
+            {/* Invite Codes Table */}
+            <div>
+              <h4 class="font-label-md font-bold uppercase tracking-wider text-on-surface-variant mb-xs">
+                Passcode Activity & Redeemed List ({inviteCodesList.length})
+              </h4>
+              <div class="border border-outline-variant/60 rounded-lg overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-surface-container-high border-b border-outline-variant/60 text-label-sm uppercase text-on-surface-variant">
+                      <th class="py-sm px-md">Passcode</th>
+                      <th class="py-sm px-md">Assigned Class</th>
+                      <th class="py-sm px-md">Expires</th>
+                      <th class="py-sm px-md">Status</th>
+                      <th class="py-sm px-md">Redeemed By</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-outline-variant/40 text-body-md text-on-surface">
+                    {inviteCodesList.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" class="py-lg text-center text-on-surface-variant text-body-md">
+                          No invitation passcodes generated yet. Create your first code above.
+                        </td>
+                      </tr>
+                    ) : (
+                      inviteCodesList.map((item) => {
+                        const isExpired = item.expiresAt < Date.now();
+                        return (
+                          <tr key={item.id} class="hover:bg-surface-container-low transition-colors">
+                            <td class="py-sm px-md font-mono font-bold text-primary">
+                              {item.code}
+                            </td>
+                            <td class="py-sm px-md">
+                              {item.assignedClasses ? item.assignedClasses.join(', ') : 'Class 10A'}
+                            </td>
+                            <td class="py-sm px-md text-xs text-on-surface-variant">
+                              {new Date(item.expiresAt).toLocaleString()}
+                            </td>
+                            <td class="py-sm px-md">
+                              {item.used ? (
+                                <span class="bg-secondary-container/80 text-on-secondary-container text-xs font-semibold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                  Redeemed
+                                </span>
+                              ) : isExpired ? (
+                                <span class="bg-error-container/80 text-error text-xs font-semibold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                                  Expired
+                                </span>
+                              ) : (
+                                <span class="bg-primary-container/40 text-primary text-xs font-semibold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                                  Pending
+                                </span>
+                              )}
+                            </td>
+                            <td class="py-sm px-md text-xs text-on-surface-variant">
+                              {item.usedByEmail || item.usedBy || '—'}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* School Info Tab */}

@@ -17,6 +17,14 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function AdminOnlyRoute({ children }) {
+  const { userProfile } = useAuth();
+  if (userProfile?.role === 'teacher') {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -32,7 +40,14 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="students" element={<Students />} />
         <Route path="attendance" element={<Attendance />} />
-        <Route path="fees" element={<Fees />} />
+        <Route
+          path="fees"
+          element={
+            <AdminOnlyRoute>
+              <Fees />
+            </AdminOnlyRoute>
+          }
+        />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />

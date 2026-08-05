@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { generateParentMessage } from '../../lib/groq';
+import { useAuth } from '../../context/AuthContext';
 
 export default function ParentNoticeModal({ isOpen, onClose, initialData = {} }) {
+  const { userProfile } = useAuth();
+  const isTeacher = userProfile?.role === 'teacher';
+
   const [studentName, setStudentName] = useState('');
   const [guardianName, setGuardianName] = useState('');
-  const [issueType, setIssueType] = useState('Fee Payment Reminder');
+  const [issueType, setIssueType] = useState('Unexcused Absence Alert');
   const [tone, setTone] = useState('Empathetic');
   const [details, setDetails] = useState('');
 
@@ -18,14 +22,14 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
     if (isOpen) {
       setStudentName(initialData.studentName || initialData.name || 'Student');
       setGuardianName(initialData.guardianName || initialData.guardian || '');
-      if (initialData.status === 'Overdue' || initialData.amount) {
+      if (!isTeacher && (initialData.status === 'Overdue' || initialData.amount)) {
         setIssueType('Fee Payment Reminder');
         setTone('Urgent');
         if (initialData.amount) {
           setDetails(`Invoice ID: ${initialData.id || ''}, Amount: $${initialData.amount}, Due: ${initialData.dueDate || 'Immediate'}`);
         }
       } else {
-        setIssueType('Fee Payment Reminder');
+        setIssueType(isTeacher ? 'Unexcused Absence Alert' : 'Fee Payment Reminder');
         setTone('Empathetic');
         setDetails('');
       }
@@ -34,7 +38,7 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
       setCopied(false);
       setSentStatus(false);
     }
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, isTeacher]);
 
   if (!isOpen) return null;
 
@@ -152,7 +156,7 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
                   onChange={(e) => setIssueType(e.target.value)}
                   class="w-full border border-outline-variant rounded-lg px-md py-2 text-body-md bg-surface text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 >
-                  <option value="Fee Payment Reminder">Fee Payment Reminder</option>
+                  {!isTeacher && <option value="Fee Payment Reminder">Fee Payment Reminder</option>}
                   <option value="Unexcused Absence Alert">Unexcused Absence Alert</option>
                   <option value="Academic & Behavioral Appreciation">Academic / Progress Kudos</option>
                   <option value="General School Announcement">General School Update</option>
@@ -179,7 +183,7 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
                 type="text"
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
-                placeholder="e.g. Due date Oct 15, outstanding balance $1,450"
+                placeholder={isTeacher ? "e.g. Unexcused absence on Oct 15 or great progress in class" : "e.g. Due date Oct 15, outstanding balance $1,450"}
                 class="w-full border border-outline-variant rounded-lg px-md py-2 text-body-md bg-surface text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>

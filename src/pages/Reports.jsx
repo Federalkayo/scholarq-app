@@ -3,6 +3,8 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { computeFeeTrend } from '../utils/feeTrend';
 import { generatePrincipalSummary } from '../lib/groq';
+import { useAuth } from '../context/AuthContext';
+import { isStudentInTeacherClasses } from '../utils/classUtils';
 
 function getLast7Days() {
   const days = [];
@@ -22,6 +24,9 @@ function normalizeLabel(str = '') {
 }
 
 export default function Reports() {
+  const { userProfile } = useAuth();
+  const isTeacher = userProfile?.role === 'teacher';
+
   const [animateBars, setAnimateBars] = useState(false);
   const [students, setStudents] = useState([]);
   const [fees, setFees] = useState([]);
@@ -45,9 +50,14 @@ export default function Reports() {
       setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setLoading(false);
     });
-    const unsubFees = onSnapshot(collection(db, 'fees'), (snap) => {
-      setFees(snap.docs.map((d) => d.data()));
-    });
+
+    let unsubFees = () => {};
+    if (!isTeacher) {
+      unsubFees = onSnapshot(collection(db, 'fees'), (snap) => {
+        setFees(snap.docs.map((d) => d.data()));
+      });
+    }
+
     const q = query(collection(db, 'attendance'), where('date', 'in', last7Days.map((d) => d.iso)));
     const unsubAttendance = onSnapshot(q, (snap) => {
       setWeekAttendance(snap.docs.map((d) => d.data()));
@@ -57,24 +67,37 @@ export default function Reports() {
       unsubFees();
       unsubAttendance();
     };
-  }, [last7Days]);
+  }, [last7Days, isTeacher]);
 
-  const totalStudents = students.length;
+  const teacherStudents = useMemo(() => {
+    if (!isTeacher) return students;
+    return students.filter((s) => isStudentInTeacherClasses(s, userProfile?.assignedClasses || ['Class 10A']));
+  }, [students, isTeacher, userProfile]);
+
+  const targetStudents = isTeacher ? teacherStudents : students;
+  const totalStudents = targetStudents.length;
 
   const weeklyTrend = last7Days.map((day) => {
     const dayRecords = weekAttendance.filter((a) => a.date === day.iso);
-    const presentCount = dayRecords.filter((a) => a.status === 'Present').length;
+    const targetIds = new Set(targetStudents.map((s) => s.id));
+    const filteredDayRecords = dayRecords.filter((a) => targetIds.has(a.studentId));
+    const presentCount = filteredDayRecords.filter((a) => a.status === 'Present').length;
     const pct = totalStudents > 0 ? (presentCount / totalStudents) * 100 : 0;
-    return { day: day.label, pct: `${Math.round(pct)}%`, hasData: dayRecords.length > 0 };
+    return { day: day.label, pct: `${Math.round(pct)}%`, hasData: filteredDayRecords.length > 0 };
   });
 
   const todayRecords = weekAttendance.filter((a) => a.date === todayISO);
-  const todayPresentCount = todayRecords.filter((a) => a.status === 'Present').length;
+  const todayPresentCount = todayRecords.filter((a) => {
+    if (isTeacher) {
+      return targetStudents.some(s => s.id === a.studentId) && a.status === 'Present';
+    }
+    return a.status === 'Present';
+  }).length;
   const todayRate = totalStudents > 0 ? Math.round((todayPresentCount / totalStudents) * 100) : 0;
 
   const sectionRows = useMemo(() => {
     const groups = {};
-    students.forEach((s) => {
+    targetStudents.forEach((s) => {
       const key = `${s.grade || 'Unassigned'} ${s.section || ''}`.trim();
       if (!groups[key]) groups[key] = { section: key, students: [] };
       groups[key].students.push(s);
@@ -102,7 +125,7 @@ export default function Reports() {
         feeCollectedPct
       };
     });
-  }, [students, fees, todayRecords]);
+  }, [targetStudents, fees, todayRecords]);
 
   const [aiSummary, setAiSummary] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -116,7 +139,8 @@ export default function Reports() {
         totalStudents,
         todayRate,
         sectionRows,
-        fees
+        fees,
+        isTeacher
       });
       setAiSummary(summaryText);
     } catch (err) {
@@ -133,7 +157,7 @@ export default function Reports() {
         <div>
           <h2 class="font-display-lg text-display-lg text-primary">Reports & Analytics</h2>
           <p class="font-body-lg text-body-lg text-on-surface-variant">
-            Live institutional data from Firestore.
+            {isTeacher ? 'Live attendance and performance analytics for your assigned classes.' : 'Live institutional data from Firestore.'}
           </p>
         </div>
       </div>
@@ -151,10 +175,12 @@ export default function Reports() {
               <div class="flex items-center gap-xs mb-md">
                 <span class="material-symbols-outlined text-secondary-fixed">auto_awesome</span>
                 <h3 class="font-label-sm text-label-sm uppercase tracking-widest text-on-primary-container font-bold">
-                  Principal Briefing
+                  {isTeacher ? 'Teacher Class Briefing' : 'Principal Briefing'}
                 </h3>
               </div>
-              <h4 class="font-headline-md text-headline-md mb-sm text-white">AI Executive Insights</h4>
+              <h4 class="font-headline-md text-headline-md mb-sm text-white">
+                {isTeacher ? 'AI Class Insights' : 'AI Executive Insights'}
+              </h4>
               
               {aiError && (
                 <div class="bg-error-container text-error text-label-sm p-sm rounded-lg mb-sm">
@@ -168,7 +194,9 @@ export default function Reports() {
                 </div>
               ) : (
                 <p class="text-body-md text-on-primary-container/80 bg-white/5 p-md rounded-lg">
-                  Click below to generate a real-time institutional briefing summarizing today's attendance trends, fee collection status, and section performance.
+                  {isTeacher
+                    ? "Click below to generate a real-time class briefing summarizing your assigned class attendance trends and student engagement."
+                    : "Click below to generate a real-time institutional briefing summarizing today's attendance trends, fee collection status, and section performance."}
                 </p>
               )}
             </div>
@@ -198,13 +226,15 @@ export default function Reports() {
           <div class="bg-surface-container-lowest rounded-xl p-lg shadow-sm border border-outline-variant hover-lift">
             <div class="flex justify-between items-start mb-lg">
               <div>
-                <h3 class="font-headline-sm text-headline-sm text-primary">Weekly Attendance Trend</h3>
+                <h3 class="font-headline-sm text-headline-sm text-primary">
+                  {isTeacher ? 'Weekly Attendance Trend (Assigned Class)' : 'Weekly Attendance Trend'}
+                </h3>
                 <p class="text-label-sm text-on-surface-variant font-medium">Today: {todayRate}%</p>
               </div>
             </div>
             {totalStudents === 0 ? (
               <p class="text-on-surface-variant text-body-md py-lg text-center">
-                Add students first to see attendance trends.
+                {isTeacher ? 'No students found in your assigned classes.' : 'Add students first to see attendance trends.'}
               </p>
             ) : (
               <div class="h-44 flex items-end justify-between gap-md relative border-b border-outline-variant px-4">
@@ -226,51 +256,53 @@ export default function Reports() {
             )}
           </div>
 
-          {/* Fee Collection Trend — placeholder, matches Fees.jsx disclaimer */}
-          <div class="bg-surface-container-lowest rounded-xl p-lg shadow-sm border border-outline-variant hover-lift">
-            <div class="flex justify-between items-center mb-md">
-              <h3 class="font-headline-sm text-headline-sm text-primary">Fee Collection Trend</h3>
-              <div class="flex gap-md text-xs text-on-surface-variant">
-                <span class="flex items-center gap-1 font-bold"><span class="w-3 h-3 rounded-full bg-primary inline-block"></span> Expected</span>
-                <span class="flex items-center gap-1 font-bold"><span class="w-3 h-3 rounded-full bg-secondary inline-block"></span> Collected</span>
+          {/* Fee Collection Trend — Admin only */}
+          {!isTeacher && (
+            <div class="bg-surface-container-lowest rounded-xl p-lg shadow-sm border border-outline-variant hover-lift">
+              <div class="flex justify-between items-center mb-md">
+                <h3 class="font-headline-sm text-headline-sm text-primary">Fee Collection Trend</h3>
+                <div class="flex gap-md text-xs text-on-surface-variant">
+                  <span class="flex items-center gap-1 font-bold"><span class="w-3 h-3 rounded-full bg-primary inline-block"></span> Expected</span>
+                  <span class="flex items-center gap-1 font-bold"><span class="w-3 h-3 rounded-full bg-secondary inline-block"></span> Collected</span>
+                </div>
               </div>
-            </div>
-            {!hasAnyTrendData ? (
-              <p class="text-on-surface-variant text-body-md py-lg text-center">
-                No invoices with due dates in the last 4 months yet.
-              </p>
-            ) : (
-              <div class="h-36 flex items-end justify-between gap-4 border-b border-outline-variant px-4">
-                {feeTrend.map((f) => (
-                  <div
-                    key={f.month}
-                    class={`flex-1 flex flex-col items-center gap-xs h-full justify-end relative group ${!f.hasData ? 'opacity-40' : ''}`}
-                  >
-                    <div class="absolute -top-8 opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-on-primary text-xs px-2 py-1 rounded shadow-md pointer-events-none z-20 whitespace-nowrap">
-                      {f.hasData ? f.amount : 'No data'}
-                    </div>
-                    <div class="w-full max-w-[48px] bg-primary/20 rounded-t-md relative h-full flex items-end overflow-hidden">
-                      <div
-                        class="w-full bg-primary rounded-t-md transition-all duration-1000 ease-out absolute bottom-0"
-                        style={{ height: animateBars ? f.expectedHeight : '0%' }}
-                      >
-                        <div
-                          class="w-full bg-secondary rounded-t-md transition-all duration-1000 ease-out absolute bottom-0"
-                          style={{ height: animateBars ? f.collectedHeight : '0%' }}
-                        ></div>
+              {!hasAnyTrendData ? (
+                <p class="text-on-surface-variant text-body-md py-lg text-center">
+                  No invoices with due dates in the last 4 months yet.
+                </p>
+              ) : (
+                <div class="h-36 flex items-end justify-between gap-4 border-b border-outline-variant px-4">
+                  {feeTrend.map((f) => (
+                    <div
+                      key={f.month}
+                      class={`flex-1 flex flex-col items-center gap-xs h-full justify-end relative group ${!f.hasData ? 'opacity-40' : ''}`}
+                    >
+                      <div class="absolute -top-8 opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-on-primary text-xs px-2 py-1 rounded shadow-md pointer-events-none z-20 whitespace-nowrap">
+                        {f.hasData ? f.amount : 'No data'}
                       </div>
+                      <div class="w-full max-w-[48px] bg-primary/20 rounded-t-md relative h-full flex items-end overflow-hidden">
+                        <div
+                          class="w-full bg-primary rounded-t-md transition-all duration-1000 ease-out absolute bottom-0"
+                          style={{ height: animateBars ? f.expectedHeight : '0%' }}
+                        >
+                          <div
+                            class="w-full bg-secondary rounded-t-md transition-all duration-1000 ease-out absolute bottom-0"
+                            style={{ height: animateBars ? f.collectedHeight : '0%' }}
+                          ></div>
+                        </div>
+                      </div>
+                      <span class="text-xs text-on-surface-variant font-bold">{f.month}</span>
                     </div>
-                    <span class="text-xs text-on-surface-variant font-bold">{f.month}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <p class="text-[11px] text-on-surface-variant mt-sm italic">
-              Live trend from invoice due dates and payment status.
-            </p>
-          </div>
+                  ))}
+                </div>
+              )}
+              <p class="text-[11px] text-on-surface-variant mt-sm italic">
+                Live trend from invoice due dates and payment status.
+              </p>
+            </div>
+          )}
 
-          {/* Sectional Performance Matrix — real, grouped from live data */}
+          {/* Sectional Performance Matrix */}
           <div class="bg-surface-container-lowest rounded-xl p-lg shadow-sm border border-outline-variant hover-lift">
             <h3 class="font-headline-sm text-headline-sm text-primary mb-md">Sectional Performance Matrix</h3>
             {loading ? (
@@ -286,7 +318,9 @@ export default function Reports() {
                       <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Students</th>
                       <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Attendance (Today)</th>
                       <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Pass Rate</th>
-                      <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Fee Collection</th>
+                      {!isTeacher && (
+                        <th class="px-md py-sm font-label-sm text-label-sm text-on-surface-variant uppercase">Fee Collection</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-outline-variant/30">
@@ -296,9 +330,11 @@ export default function Reports() {
                         <td class="px-md py-sm font-body-md text-on-surface-variant">{row.studentCount}</td>
                         <td class="px-md py-sm font-body-md text-secondary font-bold">{row.attendancePct}%</td>
                         <td class="px-md py-sm font-body-md text-on-surface-variant italic">Not tracked yet</td>
-                        <td class="px-md py-sm font-body-md text-on-surface font-bold">
-                          {row.feeCollectedPct === null ? '—' : `${row.feeCollectedPct}%`}
-                        </td>
+                        {!isTeacher && (
+                          <td class="px-md py-sm font-body-md text-on-surface font-bold">
+                            {row.feeCollectedPct === null ? '—' : `${row.feeCollectedPct}%`}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

@@ -2,16 +2,20 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
+  const { signupWithInviteCode } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [passcode, setPasscode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const [mode, setMode] = useState('signIn'); // 'signIn' | 'reset'
+  const [mode, setMode] = useState('signIn'); // 'signIn' | 'signUp' | 'reset'
   const [resetEmail, setResetEmail] = useState('');
   const [resetStatus, setResetStatus] = useState(''); // '' | 'sending' | 'sent' | 'error'
 
@@ -24,6 +28,25 @@ export default function Login() {
       navigate('/');
     } catch (err) {
       setError('Incorrect email or password. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignUpSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!passcode.trim()) {
+      setError('An invitation passcode is required to register as a teacher.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await signupWithInviteCode(email, password, name, passcode);
+      navigate('/');
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Registration failed. Please check your passcode.');
     } finally {
       setLoading(false);
     }
@@ -74,9 +97,9 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right: login / reset form */}
+      {/* Right: login / signup / reset form */}
       <div class="flex-1 flex items-center justify-center p-lg">
-        {mode === 'signIn' ? (
+        {mode === 'signIn' && (
           <form onSubmit={handleSubmit} class="w-full max-w-sm">
             <div class="lg:hidden flex items-center gap-sm mb-xl">
               <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center font-display-md text-white">
@@ -87,7 +110,7 @@ export default function Login() {
 
             <h2 class="font-display-lg text-display-lg text-on-surface mb-xs">Welcome back</h2>
             <p class="text-on-surface-variant text-body-md mb-xl">
-              Sign in to your school's admin dashboard.
+              Sign in to your school's dashboard.
             </p>
 
             {error && (
@@ -146,7 +169,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              class="w-full bg-primary text-white py-3 rounded-lg font-label-md font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-xs group"
+              class="w-full bg-primary text-white py-3 rounded-lg font-label-md font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-xs group cursor-pointer mb-md"
             >
               {loading ? (
                 <>
@@ -163,28 +186,115 @@ export default function Login() {
               )}
             </button>
 
-            <div class="flex items-center justify-center gap-xs mt-md text-on-surface-variant text-label-sm">
-              <span class="material-symbols-outlined text-[16px] text-secondary">lock</span>
-              Secure login — your data stays encrypted in transit
+            <div class="text-center border-t border-outline-variant/40 pt-md mt-md">
+              <p class="text-on-surface-variant text-label-sm mb-xs">Have an invitation passcode?</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signUp');
+                  setError('');
+                }}
+                class="text-label-md text-primary font-bold hover:underline flex items-center justify-center gap-xs mx-auto"
+              >
+                <span class="material-symbols-outlined text-[18px]">key</span>
+                Register as Teacher with Passcode
+              </button>
             </div>
-
-            <p class="text-center text-on-surface-variant text-label-sm mt-xl">
-              Trouble signing in? Contact your school administrator.
-            </p>
           </form>
-        ) : (
-          <form onSubmit={handleResetSubmit} class="w-full max-w-sm">
-            <div class="lg:hidden flex items-center gap-sm mb-xl">
-              <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center font-display-md text-white">
-                S
-              </div>
-              <span class="font-display-md text-primary text-xl font-bold">Scholarq</span>
-            </div>
+        )}
 
+        {mode === 'signUp' && (
+          <form onSubmit={handleSignUpSubmit} class="w-full max-w-sm">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signIn');
+                setError('');
+              }}
+              class="flex items-center gap-xs text-label-md text-on-surface-variant hover:text-on-surface mb-lg cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+              Back to sign in
+            </button>
+
+            <h2 class="font-display-lg text-display-lg text-on-surface mb-xs">Teacher Registration</h2>
+            <p class="text-on-surface-variant text-body-md mb-lg">
+              Enter your invitation passcode issued by your school admin.
+            </p>
+
+            {error && (
+              <div class="bg-error-container text-error text-label-md px-md py-sm rounded-lg mb-md flex items-center gap-xs">
+                <span class="material-symbols-outlined text-[18px]">error</span>
+                {error}
+              </div>
+            )}
+
+            <label class="block font-label-md text-on-surface-variant mb-xs">Invitation Passcode *</label>
+            <input
+              type="text"
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value.toUpperCase())}
+              required
+              placeholder="e.g. TCH-9X82K4"
+              class="w-full border border-primary/40 rounded-lg px-md py-3 mb-md outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-primary/5 text-primary font-mono text-center font-bold tracking-wider transition-all"
+            />
+
+            <label class="block font-label-md text-on-surface-variant mb-xs">Full Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              placeholder="Sarah Jenkins"
+              class="w-full border border-outline-variant rounded-lg px-md py-3 mb-md outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface-container-lowest text-on-surface transition-all"
+            />
+
+            <label class="block font-label-md text-on-surface-variant mb-xs">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              placeholder="teacher@yourschool.edu"
+              class="w-full border border-outline-variant rounded-lg px-md py-3 mb-md outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface-container-lowest text-on-surface transition-all"
+            />
+
+            <label class="block font-label-md text-on-surface-variant mb-xs">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="Minimum 6 characters"
+              class="w-full border border-outline-variant rounded-lg px-md py-3 mb-lg outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface-container-lowest text-on-surface transition-all"
+            />
+
+            <button
+              type="submit"
+              disabled={loading}
+              class="w-full bg-secondary text-on-secondary py-3 rounded-lg font-label-md font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-xs cursor-pointer shadow-sm"
+            >
+              {loading ? (
+                <>
+                  <span class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+                  Validating Passcode & Creating Account...
+                </>
+              ) : (
+                <>
+                  Complete Registration
+                  <span class="material-symbols-outlined text-[18px]">check_circle</span>
+                </>
+              )}
+            </button>
+          </form>
+        )}
+
+        {mode === 'reset' && (
+          <form onSubmit={handleResetSubmit} class="w-full max-w-sm">
             <button
               type="button"
               onClick={() => setMode('signIn')}
-              class="flex items-center gap-xs text-label-md text-on-surface-variant hover:text-on-surface mb-lg"
+              class="flex items-center gap-xs text-label-md text-on-surface-variant hover:text-on-surface mb-lg cursor-pointer"
             >
               <span class="material-symbols-outlined text-[18px]">arrow_back</span>
               Back to sign in
@@ -199,7 +309,7 @@ export default function Login() {
               <div class="bg-secondary-container text-on-secondary-container text-label-md px-md py-md rounded-lg flex items-start gap-xs">
                 <span class="material-symbols-outlined text-[20px]">check_circle</span>
                 <span>
-                  If an account exists for <strong>{resetEmail}</strong>, a reset link is on its way. Check your inbox (and spam folder).
+                  If an account exists for <strong>{resetEmail}</strong>, a reset link is on its way. Check your inbox.
                 </span>
               </div>
             ) : (
@@ -225,7 +335,7 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={resetStatus === 'sending'}
-                  class="w-full bg-primary text-white py-3 rounded-lg font-label-md font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-xs"
+                  class="w-full bg-primary text-white py-3 rounded-lg font-label-md font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-xs cursor-pointer"
                 >
                   {resetStatus === 'sending' ? (
                     <>

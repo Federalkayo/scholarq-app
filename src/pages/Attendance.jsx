@@ -3,13 +3,15 @@ import { collection, onSnapshot, query, where, doc, setDoc, writeBatch } from 'f
 import { db } from '../firebase';
 import AttendanceToggle from '../components/ui/AttendanceToggle';
 import Avatar from '../components/ui/Avatar';
+import { useAuth } from '../context/AuthContext';
+import { isStudentInTeacherClasses } from '../utils/classUtils';
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10); // e.g. "2026-08-02"
+  return new Date().toISOString().slice(0, 10);
 }
 
 function todayDisplay() {
@@ -22,8 +24,12 @@ function todayDisplay() {
 }
 
 export default function Attendance() {
+  const { userProfile } = useAuth();
+  const isTeacher = userProfile?.role === 'teacher';
+  const assignedClasses = userProfile?.assignedClasses || ['Class 10A'];
+
   const [students, setStudents] = useState([]);
-  const [attendanceMap, setAttendanceMap] = useState({}); // studentId -> status
+  const [attendanceMap, setAttendanceMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const date = todayISO();
@@ -63,9 +69,14 @@ export default function Attendance() {
     return unsubscribe;
   }, [date]);
 
+  const filteredStudents = useMemo(() => {
+    if (!isTeacher) return students;
+    return students.filter((s) => isStudentInTeacherClasses(s, assignedClasses));
+  }, [students, isTeacher, assignedClasses]);
+
   const rollCall = useMemo(
     () =>
-      students.map((s, idx) => ({
+      filteredStudents.map((s, idx) => ({
         id: s.id,
         rollNo: idx + 1,
         name: s.name,
@@ -74,7 +85,7 @@ export default function Attendance() {
         classSec: `${s.grade || ''} ${s.section || ''}`.trim(),
         status: attendanceMap[s.id] || 'Unmarked'
       })),
-    [students, attendanceMap]
+    [filteredStudents, attendanceMap]
   );
 
   // Deterministic doc ID (date + studentId) means marking a student twice
@@ -98,7 +109,7 @@ export default function Attendance() {
   const markAllPresent = async () => {
     try {
       const batch = writeBatch(db);
-      students.forEach((s) => {
+      filteredStudents.forEach((s) => {
         const ref = doc(db, 'attendance', `${date}_${s.id}`);
         batch.set(ref, {
           studentId: s.id,
