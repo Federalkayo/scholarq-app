@@ -1,19 +1,34 @@
-const functions = require("firebase-functions");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
 const db = admin.firestore();
+
+// --- Notifications: push, email (Brevo), SMS (Termii) ---
+const { saveFcmToken, removeFcmToken, markNotificationRead } = require("./notifications/tokens");
+const { dispatchParentNotice } = require("./notifications/dispatchParentNotice");
+const { onAttendanceWrite } = require("./notifications/attendanceAlerts");
+const { scheduledFeeReminders } = require("./notifications/feeReminders");
+const { onAnnouncementCreate } = require("./notifications/announcements");
+
+exports.saveFcmToken = saveFcmToken;
+exports.removeFcmToken = removeFcmToken;
+exports.markNotificationRead = markNotificationRead;
+exports.dispatchParentNotice = dispatchParentNotice;
+exports.onAttendanceWrite = onAttendanceWrite;
+exports.scheduledFeeReminders = scheduledFeeReminders;
+exports.onAnnouncementCreate = onAnnouncementCreate;
 
 /**
  * Callable Cloud Function: redeemInviteCode
  * Validates passcode existence, expiration, and usage status,
  * then atomically writes user profile `/users/{uid}` and marks passcode `used: true`.
  */
-exports.redeemInviteCode = functions.https.onCall(async (data, context) => {
-  const { code, uid, name, email } = data;
+exports.redeemInviteCode = onCall({ region: "europe-west1" }, async (request) => {
+  const { code, uid, name, email } = request.data || {};
 
   if (!code || !uid || !email) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "invalid-argument",
       "Passcode, UID, and Email are required."
     );
@@ -27,7 +42,7 @@ exports.redeemInviteCode = functions.https.onCall(async (data, context) => {
     const inviteDoc = await transaction.get(inviteRef);
 
     if (!inviteDoc.exists) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "not-found",
         "Invalid passcode. Please check the code and try again."
       );
@@ -36,7 +51,7 @@ exports.redeemInviteCode = functions.https.onCall(async (data, context) => {
     const inviteData = inviteDoc.data();
 
     if (inviteData.used) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "already-exists",
         "This passcode has already been used."
       );
@@ -46,7 +61,7 @@ exports.redeemInviteCode = functions.https.onCall(async (data, context) => {
     const expiresAt = inviteData.expiresAt ? (inviteData.expiresAt.toMillis ? inviteData.expiresAt.toMillis() : inviteData.expiresAt) : Number.MAX_SAFE_INTEGER;
 
     if (expiresAt < now) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "deadline-exceeded",
         "This passcode has expired. Please request a new invitation from your administrator."
       );

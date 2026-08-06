@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import ScholarBot from '../ui/ScholarBot';
+import NotificationToastContainer from '../ui/NotificationToast';
 
 export default function Layout() {
   const location = useLocation();
@@ -38,6 +39,7 @@ export default function Layout() {
         </main>
       </div>
       <ScholarBot />
+      <NotificationToastContainer />
     </div>
   );
 }

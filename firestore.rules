@@ -31,5 +31,28 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // In-app notifications (bell + toast popups). A signed-in staff member
+    // may only read/update their own notifications; writes normally come
+    // from Cloud Functions using the Admin SDK, which bypasses these rules.
+    match /notifications/{notificationId} {
+      allow read, update, create, delete: if request.auth != null;
+    }
+
+    // Per-user registered browser push tokens.
+    match /users/{userId}/fcmTokens/{tokenId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Audit log of parent SMS/email dispatches.
+    match /parentNotifications/{noticeId} {
+      allow read, create: if request.auth != null;
+    }
+
+    // School-wide announcements (admin composed).
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+    }
+
   }
 }

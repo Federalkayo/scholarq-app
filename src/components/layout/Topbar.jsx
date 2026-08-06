@@ -1,14 +1,50 @@
-import React, { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useSettings } from '../../context/SettingsContext';
+import { useNotifications, iconForType, accentForType } from '../../context/NotificationContext';
+import { enablePushNotifications, currentPermission } from '../../lib/messaging';
+
+function timeAgo(timestamp) {
+  const ms = timestamp?.toMillis ? timestamp.toMillis() : timestamp?.seconds ? timestamp.seconds * 1000 : null;
+  if (!ms) return '';
+  const diff = Date.now() - ms;
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
 
 export default function Topbar({ searchFilter, onSearchChange, selectedClass, onClassChange, selectedSection, onSectionChange }) {
   const location = useLocation();
   const isAttendancePage = location.pathname === '/attendance';
   const { currentUser, userProfile, logout } = useAuth();
   const { settings } = useSettings();
+  const { notifications, unreadCount, markAsRead } = useNotifications();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [pushPermission, setPushPermission] = useState('default');
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setPushPermission(currentPermission());
+  }, []);
+
+  const handleEnablePush = async () => {
+    const token = await enablePushNotifications();
+    setPushPermission(currentPermission());
+    if (!token && currentPermission() === 'denied') {
+      // Browser-level denial can only be reversed from browser site settings.
+    }
+  };
+
+  const handleNotificationClick = (notification) => {
+    if (!notification.read) markAsRead(notification.id);
+    setNotifOpen(false);
+    if (notification.data?.route) navigate(notification.data.route);
+  };
 
   const profile = settings?.profileData;
   const isTeacher = userProfile?.role === 'teacher';
@@ -76,10 +112,62 @@ export default function Topbar({ searchFilter, onSearchChange, selectedClass, on
 
       <div class="flex items-center gap-lg">
         <div class="flex items-center gap-md">
-          <button class="p-2 hover:bg-surface-container-high rounded-full transition-colors relative">
-            <span class="material-symbols-outlined text-on-surface-variant">notifications</span>
-            <span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
-          </button>
+          <div class="relative">
+            <button
+              onClick={() => setNotifOpen((v) => !v)}
+              class="p-2 hover:bg-surface-container-high rounded-full transition-colors relative"
+            >
+              <span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+              {unreadCount > 0 && (
+                <span class="absolute top-1 right-1 min-w-[16px] h-[16px] px-[3px] bg-error text-on-error text-[9px] font-bold rounded-full flex items-center justify-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {notifOpen && (
+              <div class="absolute right-0 mt-2 w-80 max-h-[70vh] overflow-y-auto bg-surface-container-lowest border border-outline-variant rounded-xl shadow-2xl z-50 animate-fadeIn">
+                <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/50 sticky top-0 bg-surface-container-lowest">
+                  <p class="font-label-md font-bold text-on-surface">Notifications</p>
+                  {pushPermission !== 'granted' && pushPermission !== 'unsupported' && (
+                    <button
+                      onClick={handleEnablePush}
+                      class="text-[11px] font-label-sm text-primary hover:underline"
+                    >
+                      {pushPermission === 'denied' ? 'Push blocked' : 'Enable push'}
+                    </button>
+                  )}
+                </div>
+                {notifications.length === 0 ? (
+                  <p class="text-body-md text-on-surface-variant text-center py-xl px-md">
+                    No notifications yet.
+                  </p>
+                ) : (
+                  <ul>
+                    {notifications.map((n) => (
+                      <li
+                        key={n.id}
+                        onClick={() => handleNotificationClick(n)}
+                        class={`flex items-start gap-sm px-md py-sm border-b border-outline-variant/30 last:border-0 cursor-pointer hover:bg-surface-container-high transition-colors ${
+                          !n.read ? 'bg-primary/5' : ''
+                        }`}
+                      >
+                        <div class={`shrink-0 w-7 h-7 rounded-full ${accentForType(n.type)} flex items-center justify-center mt-0.5`}>
+                          <span class="material-symbols-outlined text-white text-[15px]">{iconForType(n.type)}</span>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                          <p class="font-label-md text-on-surface font-bold leading-snug truncate">{n.title}</p>
+                          <p class="text-xs text-on-surface-variant leading-snug mt-0.5 line-clamp-2">{n.body}</p>
+                          <p class="text-[10px] text-on-surface-variant/70 mt-1">{timeAgo(n.createdAt)}</p>
+                        </div>
+                        {!n.read && <span class="shrink-0 w-2 h-2 bg-primary rounded-full mt-2"></span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
           <button class="p-2 hover:bg-surface-container-high rounded-full transition-colors">
             <span class="material-symbols-outlined text-on-surface-variant">help</span>
           </button>

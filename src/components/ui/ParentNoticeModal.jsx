@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { httpsCallable } from 'firebase/functions';
 import { generateParentMessage } from '../../lib/groq';
 import { useAuth } from '../../context/AuthContext';
+import { functions } from '../../firebase';
 
 export default function ParentNoticeModal({ isOpen, onClose, initialData = {} }) {
   const { userProfile } = useAuth();
@@ -8,20 +10,31 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
 
   const [studentName, setStudentName] = useState('');
   const [guardianName, setGuardianName] = useState('');
+  const [guardianContact, setGuardianContact] = useState('');
+  const [guardianEmail, setGuardianEmail] = useState('');
+  const [channels, setChannels] = useState({ sms: true, email: false });
   const [issueType, setIssueType] = useState('Unexcused Absence Alert');
   const [tone, setTone] = useState('Empathetic');
   const [details, setDetails] = useState('');
 
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentStatus, setSentStatus] = useState(false);
+  const [sendResults, setSendResults] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
       setStudentName(initialData.studentName || initialData.name || 'Student');
       setGuardianName(initialData.guardianName || initialData.guardian || '');
+      setGuardianContact(initialData.guardianContact || '');
+      setGuardianEmail(initialData.guardianEmail || '');
+      setChannels({
+        sms: !!(initialData.guardianContact),
+        email: !initialData.guardianContact && !!initialData.guardianEmail,
+      });
       if (!isTeacher && (initialData.status === 'Overdue' || initialData.amount)) {
         setIssueType('Fee Payment Reminder');
         setTone('Urgent');
@@ -37,6 +50,7 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
       setError('');
       setCopied(false);
       setSentStatus(false);
+      setSendResults(null);
     }
   }, [isOpen, initialData, isTeacher]);
 
@@ -79,11 +93,36 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
     }
   };
 
-  const handleSend = () => {
-    setSentStatus(true);
-    setTimeout(() => {
-      onClose();
-    }, 1800);
+  const handleSend = async () => {
+    const selectedChannels = Object.entries(channels).filter(([, v]) => v).map(([k]) => k);
+    if (selectedChannels.length === 0) {
+      setError('Select at least one channel (SMS or Email) to dispatch.');
+      return;
+    }
+    setSending(true);
+    setError('');
+    try {
+      const dispatchParentNotice = httpsCallable(functions, 'dispatchParentNotice');
+      const res = await dispatchParentNotice({
+        studentId: initialData.id || initialData.studentId || null,
+        studentName,
+        guardianName,
+        guardianContact,
+        guardianEmail,
+        subject: `ScholarQ Notice: ${studentName} — ${issueType}`,
+        message,
+        channels: selectedChannels,
+      });
+      setSendResults(res.data.results);
+      setSentStatus(true);
+      setTimeout(() => onClose(), 2400);
+    } catch (err) {
+      console.error('Failed to dispatch parent notice:', err);
+      setError(err.message || 'Delivery failed. Please check guardian contact details and try again.');
+      if (err.details) setSendResults(err.details);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -113,10 +152,19 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
             <span class="material-symbols-outlined text-secondary text-5xl mb-sm animate-bounce">
               mark_email_read
             </span>
-            <h4 class="font-headline-md text-on-surface">Message Sent to Guardian!</h4>
-            <p class="text-body-md text-on-surface-variant mt-xs">
-              Dispatch queued via Scholarq Parent Notification Gateway.
-            </p>
+            <h4 class="font-headline-md text-on-surface">Notice Dispatched!</h4>
+            <div class="mt-sm space-y-1 text-body-md">
+              {sendResults?.sms && (
+                <p class={sendResults.sms.success ? 'text-secondary' : 'text-error'}>
+                  SMS via Termii: {sendResults.sms.success ? 'Delivered to carrier' : sendResults.sms.error}
+                </p>
+              )}
+              {sendResults?.email && (
+                <p class={sendResults.email.success ? 'text-secondary' : 'text-error'}>
+                  Email via Brevo: {sendResults.email.success ? 'Sent' : sendResults.email.error}
+                </p>
+              )}
+            </div>
           </div>
         ) : (
           <div class="space-y-md">
@@ -146,6 +194,51 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
                   class="w-full border border-outline-variant rounded-lg px-md py-2 text-body-md bg-surface text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-md">
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Guardian Phone</label>
+                <input
+                  type="tel"
+                  value={guardianContact}
+                  onChange={(e) => setGuardianContact(e.target.value)}
+                  placeholder="e.g. 08012345678"
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 text-body-md bg-surface text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Guardian Email</label>
+                <input
+                  type="email"
+                  value={guardianEmail}
+                  onChange={(e) => setGuardianEmail(e.target.value)}
+                  placeholder="guardian@example.com"
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 text-body-md bg-surface text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+
+            <div class="flex items-center gap-lg">
+              <span class="font-label-md text-on-surface-variant">Send via:</span>
+              <label class="flex items-center gap-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={channels.sms}
+                  onChange={(e) => setChannels((c) => ({ ...c, sms: e.target.checked }))}
+                  class="accent-primary w-4 h-4"
+                />
+                <span class="text-body-md text-on-surface">SMS (Termii)</span>
+              </label>
+              <label class="flex items-center gap-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={channels.email}
+                  onChange={(e) => setChannels((c) => ({ ...c, email: e.target.checked }))}
+                  class="accent-primary w-4 h-4"
+                />
+                <span class="text-body-md text-on-surface">Email (Brevo)</span>
+              </label>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-md">
@@ -227,10 +320,15 @@ export default function ParentNoticeModal({ isOpen, onClose, initialData = {} })
                   </button>
                   <button
                     onClick={handleSend}
-                    class="flex-1 flex items-center justify-center gap-xs py-2 bg-secondary text-on-secondary rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm"
+                    disabled={sending}
+                    class="flex-1 flex items-center justify-center gap-xs py-2 bg-secondary text-on-secondary rounded-lg font-label-md hover:opacity-90 active:scale-95 transition-all shadow-sm disabled:opacity-50"
                   >
-                    <span class="material-symbols-outlined text-[18px]">send</span>
-                    Dispatch Notice
+                    {sending ? (
+                      <span class="w-4 h-4 border-2 border-on-secondary/40 border-t-on-secondary rounded-full animate-spin"></span>
+                    ) : (
+                      <span class="material-symbols-outlined text-[18px]">send</span>
+                    )}
+                    {sending ? 'Dispatching…' : 'Dispatch Notice'}
                   </button>
                 </div>
               </div>

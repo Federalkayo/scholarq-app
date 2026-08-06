@@ -26,6 +26,7 @@ const emptyForm = {
   section: SECTION_OPTIONS[0],
   guardian: '',
   guardianContact: '',
+  guardianEmail: '',
   feeStatus: 'Pending',
   attendance: '',
   avatar: ''
@@ -92,6 +93,7 @@ export default function Students() {
             section: data.section || '',
             guardian: data.guardian || '',
             guardianContact: data.guardianContact || '',
+            guardianEmail: data.guardianEmail || '',
             feeStatus: data.feeStatus || 'Pending',
             attendance: typeof data.attendance === 'number' ? data.attendance : 0,
             avatar: data.avatar || '',
@@ -167,6 +169,7 @@ export default function Students() {
       section: student.section || SECTION_OPTIONS[0],
       guardian: student.guardian,
       guardianContact: student.guardianContact,
+      guardianEmail: student.guardianEmail || '',
       feeStatus: student.feeStatus,
       attendance: student.attendance,
       avatar: student.avatar || ''
@@ -237,6 +240,7 @@ export default function Students() {
       section: form.section,
       guardian: form.guardian.trim(),
       guardianContact: form.guardianContact.trim(),
+      guardianEmail: form.guardianEmail.trim(),
       feeStatus: form.feeStatus,
       attendance: form.attendance === '' ? 0 : Number(form.attendance),
       avatar: form.avatar || ''
@@ -397,6 +401,7 @@ export default function Students() {
                     <td class="px-lg py-md">
                       <p class="font-body-md text-body-md text-on-surface">{st.guardian}</p>
                       <p class="text-xs text-on-surface-variant">{st.guardianContact}</p>
+                      {st.guardianEmail && <p class="text-xs text-on-surface-variant/70">{st.guardianEmail}</p>}
                     </td>
                     {!isTeacher && (
                       <td class="px-lg py-md">
@@ -475,6 +480,10 @@ export default function Students() {
               <div class="flex justify-between py-xs border-b border-outline-variant/30">
                 <span class="text-on-surface-variant font-label-md">Contact</span>
                 <span class="font-bold text-on-surface">{selectedStudent.guardianContact}</span>
+              </div>
+              <div class="flex justify-between py-xs border-b border-outline-variant/30">
+                <span class="text-on-surface-variant font-label-md">Email</span>
+                <span class="font-bold text-on-surface">{selectedStudent.guardianEmail || '—'}</span>
               </div>
               {!isTeacher && (
                 <div class="flex justify-between py-xs border-b border-outline-variant/30">
@@ -681,6 +690,17 @@ export default function Students() {
                   value={form.guardianContact}
                   onChange={(e) => handleFormChange('guardianContact', e.target.value)}
                   placeholder="+1 (555) 123-4567"
+                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label class="block font-label-md text-on-surface-variant mb-xs">Guardian Email</label>
+                <input
+                  type="email"
+                  value={form.guardianEmail}
+                  onChange={(e) => handleFormChange('guardianEmail', e.target.value)}
+                  placeholder="guardian@example.com"
                   class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
                 />
               </div>
