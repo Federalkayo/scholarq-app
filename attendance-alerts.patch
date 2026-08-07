@@ -1,0 +1,109 @@
+diff --git a/functions/notifications/attendanceAlerts.js b/functions/notifications/attendanceAlerts.js
+index 416d23a..9638c24 100644
+--- a/functions/notifications/attendanceAlerts.js
++++ b/functions/notifications/attendanceAlerts.js
+@@ -2,7 +2,8 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+ const admin = require("firebase-admin");
+ const { sendEmail } = require("../services/brevo");
+ const { sendSms } = require("../services/termii");
+-const { notifyStaff, getStaffUids } = require("../services/push");
++const { notifyStaff, getStaffProfiles } = require("../services/push");
++const { isStudentInTeacherClasses } = require("../utils/classUtils");
+ 
+ /**
+  * Fires on every attendance/{date_studentId} write (marking a roll call).
+@@ -34,9 +35,20 @@ exports.onAttendanceWrite = onDocumentWritten(
+     const student = studentSnap?.exists ? studentSnap.data() : {};
+     const settingsEnabled = settingsSnap.exists ? settingsSnap.data().attendanceDigest !== false : true;
+ 
+-    const staffUids = await getStaffUids({ roles: ["admin", "teacher"] });
++    // Admins see every absence; teachers only see absences for classes
++    // they're actually assigned to (empty/missing assignedClasses is
++    // treated as "no restriction" by isStudentInTeacherClasses, so make
++    // sure teacher profiles are populated with assignedClasses).
++    const staffProfiles = await getStaffProfiles({ roles: ["admin", "teacher"] });
++    const recipientUids = staffProfiles
++      .filter((staff) => {
++        if (staff.role === "admin") return true;
++        return isStudentInTeacherClasses(student, staff.assignedClasses);
++      })
++      .map((staff) => staff.uid);
++
+     await notifyStaff({
+-      uids: staffUids,
++      uids: recipientUids,
+       type: "attendance",
+       title: "Absence recorded",
+       body: `${after.studentName || "A student"} (${after.classSec || "—"}) was marked absent on ${after.date}.`,
+diff --git a/functions/services/push.js b/functions/services/push.js
+index 4d6b817..052c21d 100644
+--- a/functions/services/push.js
++++ b/functions/services/push.js
+@@ -80,4 +80,17 @@ async function getStaffUids({ roles } = {}) {
+     .map((d) => d.id);
+ }
+ 
+-module.exports = { notifyStaff, getStaffUids };
++/**
++ * Fetches full staff docs (uid + profile fields), optionally filtered by role.
++ * Use this instead of getStaffUids when the caller needs to filter further,
++ * e.g. by a teacher's assignedClasses before sending class-scoped alerts.
++ */
++async function getStaffProfiles({ roles } = {}) {
++  const db = admin.firestore();
++  const snap = await db.collection("users").get();
++  return snap.docs
++    .filter((d) => !roles || roles.includes(d.data().role))
++    .map((d) => ({ uid: d.id, ...d.data() }));
++}
++
++module.exports = { notifyStaff, getStaffUids, getStaffProfiles };
+diff --git a/functions/utils/classUtils.js b/functions/utils/classUtils.js
+new file mode 100644
+index 0000000..3558dc6
+--- /dev/null
++++ b/functions/utils/classUtils.js
+@@ -0,0 +1,43 @@
++/**
++ * Cloud Functions (CommonJS) port of src/utils/classUtils.js.
++ * Keep this in sync with the frontend version — duplicated here because
++ * the functions/ package builds independently of src/.
++ *
++ * Matches a student record against a teacher's assignedClasses, handling
++ * variations like:
++ * - "Class 10A", "Grade 10 Section A", "Grade 10 A", "10A", "Grade 10"
++ */
++function isStudentInTeacherClasses(student, assignedClasses = []) {
++  if (!assignedClasses || assignedClasses.length === 0) return true;
++  if (!student) return false;
++
++  const grade = (student.grade || "").trim();
++  const section = (student.section || "").trim();
++
++  // Primary combinations
++  const full1 = `${grade} ${section}`.trim(); // "Grade 10 Section A"
++  const secLetter = section.replace(/^Section\s*/i, "").trim(); // "A"
++  const gradeNum = grade.replace(/^Grade\s*/i, "").trim(); // "10"
++  const short1 = `Class ${gradeNum}${secLetter}`.trim(); // "Class 10A"
++  const short2 = `${gradeNum}${secLetter}`.trim(); // "10A"
++  const gradeOnly = grade; // "Grade 10"
++
++  return assignedClasses.some((ac) => {
++    if (!ac) return false;
++    const normAc = ac.trim();
++    const normAcLower = normAc.toLowerCase();
++    const fullLower = full1.toLowerCase();
++
++    return (
++      normAc === full1 ||
++      normAc === short1 ||
++      normAc === short2 ||
++      normAc === gradeOnly ||
++      fullLower.includes(normAcLower) ||
++      normAcLower.includes(fullLower) ||
++      (gradeNum && normAcLower.includes(gradeNum.toLowerCase()) && secLetter && normAcLower.includes(secLetter.toLowerCase()))
++    );
++  });
++}
++
++module.exports = { isStudentInTeacherClasses };

@@ -2,7 +2,8 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 const { sendEmail } = require("../services/brevo");
 const { sendSms } = require("../services/termii");
-const { notifyStaff, getStaffUids } = require("../services/push");
+const { notifyStaff, getStaffProfiles } = require("../services/push");
+const { isStudentInTeacherClasses } = require("../utils/classUtils");
 
 /**
  * Fires on every attendance/{date_studentId} write (marking a roll call).
@@ -34,9 +35,20 @@ exports.onAttendanceWrite = onDocumentWritten(
     const student = studentSnap?.exists ? studentSnap.data() : {};
     const settingsEnabled = settingsSnap.exists ? settingsSnap.data().attendanceDigest !== false : true;
 
-    const staffUids = await getStaffUids({ roles: ["admin", "teacher"] });
+    // Admins see every absence; teachers only see absences for classes
+    // they're actually assigned to (empty/missing assignedClasses is
+    // treated as "no restriction" by isStudentInTeacherClasses, so make
+    // sure teacher profiles are populated with assignedClasses).
+    const staffProfiles = await getStaffProfiles({ roles: ["admin", "teacher"] });
+    const recipientUids = staffProfiles
+      .filter((staff) => {
+        if (staff.role === "admin") return true;
+        return isStudentInTeacherClasses(student, staff.assignedClasses);
+      })
+      .map((staff) => staff.uid);
+
     await notifyStaff({
-      uids: staffUids,
+      uids: recipientUids,
       type: "attendance",
       title: "Absence recorded",
       body: `${after.studentName || "A student"} (${after.classSec || "—"}) was marked absent on ${after.date}.`,

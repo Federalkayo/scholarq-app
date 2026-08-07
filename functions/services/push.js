@@ -80,4 +80,17 @@ async function getStaffUids({ roles } = {}) {
     .map((d) => d.id);
 }
 
-module.exports = { notifyStaff, getStaffUids };
+/**
+ * Fetches full staff docs (uid + profile fields), optionally filtered by role.
+ * Use this instead of getStaffUids when the caller needs to filter further,
+ * e.g. by a teacher's assignedClasses before sending class-scoped alerts.
+ */
+async function getStaffProfiles({ roles } = {}) {
+  const db = admin.firestore();
+  const snap = await db.collection("users").get();
+  return snap.docs
+    .filter((d) => !roles || roles.includes(d.data().role))
+    .map((d) => ({ uid: d.id, ...d.data() }));
+}
+
+module.exports = { notifyStaff, getStaffUids, getStaffProfiles };
