@@ -8,7 +8,6 @@ import {
   query,
   getDocs,
   orderBy,
-  runTransaction,
   serverTimestamp
 } from 'firebase/firestore';
 
@@ -84,61 +83,12 @@ export async function getInviteCodes() {
 }
 
 /**
- * Redeem an invite code transactionally (used during Teacher signup)
- * Validates existence, single-use, non-expired status, and writes profile in 1 atomic transaction.
+ * NOTE: invite-code redemption during signup is handled by the
+ * redeemInviteCode Cloud Function (see functions/index.js), called from
+ * AuthContext.jsx via httpsCallable — not from this file. A client-side
+ * version used to live here, but it required Firestore rules to allow
+ * direct client writes to the `role` field on `users/{uid}`, which made
+ * it possible for anyone to self-register as admin by calling this
+ * function directly from the browser console, bypassing invite codes
+ * entirely. Redeeming server-side via the Admin SDK closes that hole.
  */
-export async function redeemInviteCode({ uid, email, name, code }) {
-  if (!code || !uid || !email) {
-    throw new Error('Code, UID, and Email are required for registration.');
-  }
-
-  const cleanCode = code.trim().toUpperCase();
-  const inviteRef = doc(db, 'inviteCodes', cleanCode);
-  const userRef = doc(db, 'users', uid);
-
-  return await runTransaction(db, async (transaction) => {
-    const inviteDoc = await transaction.get(inviteRef);
-
-    if (!inviteDoc.exists()) {
-      throw new Error('Invalid passcode. Please check the code provided by your administrator.');
-    }
-
-    const inviteData = inviteDoc.data();
-
-    if (inviteData.used) {
-      throw new Error('This passcode has already been used. Passcodes are single-use only.');
-    }
-
-    const now = Date.now();
-    const expiresAt = typeof inviteData.expiresAt === 'number'
-      ? inviteData.expiresAt
-      : (inviteData.expiresAt?.toMillis ? inviteData.expiresAt.toMillis() : Number.MAX_SAFE_INTEGER);
-
-    if (expiresAt < now) {
-      throw new Error('This passcode has expired. Passcodes are valid for 24-72 hours.');
-    }
-
-    const userProfile = {
-      uid,
-      email,
-      name: name || email.split('@')[0],
-      role: inviteData.role || 'teacher',
-      schoolId: inviteData.schoolId || 'sch_main',
-      assignedClasses: inviteData.assignedClasses || ['Class 10A'],
-      createdAt: new Date().toISOString()
-    };
-
-    // 1. Create user profile doc with assigned role & schoolId
-    transaction.set(userRef, userProfile);
-
-    // 2. Mark invite code as used
-    transaction.update(inviteRef, {
-      used: true,
-      usedBy: uid,
-      usedByEmail: email,
-      usedAt: new Date().toISOString()
-    });
-
-    return userProfile;
-  });
-}

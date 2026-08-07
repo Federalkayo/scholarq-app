@@ -7,6 +7,7 @@ import { generateReportComment } from '../lib/groq';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
 import ParentNoticeModal from '../components/ui/ParentNoticeModal';
+import ImportStudentsModal from '../components/ui/ImportStudentsModal';
 import { useAuth } from '../context/AuthContext';
 import { isStudentInTeacherClasses } from '../utils/classUtils';
 
@@ -28,7 +29,6 @@ const emptyForm = {
   guardianContact: '',
   guardianEmail: '',
   feeStatus: 'Pending',
-  attendance: '',
   avatar: ''
 };
 
@@ -42,10 +42,12 @@ export default function Students() {
 
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [students, setStudents] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [modalMode, setModalMode] = useState('add');
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -95,7 +97,6 @@ export default function Students() {
             guardianContact: data.guardianContact || '',
             guardianEmail: data.guardianEmail || '',
             feeStatus: data.feeStatus || 'Pending',
-            attendance: typeof data.attendance === 'number' ? data.attendance : 0,
             avatar: data.avatar || '',
             initials: getInitials(data.name)
           };
@@ -111,6 +112,42 @@ export default function Students() {
     );
     return unsubscribe;
   }, []);
+
+  // All roll-call records (from the Attendance page's Student Roll Call),
+  // used below to compute each student's real attendance rate — rather
+  // than relying on a manually-typed number on the student document,
+  // which has no connection to actual day-to-day check-ins.
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'attendance'),
+      (snapshot) => {
+        setAttendanceRecords(snapshot.docs.map((docSnap) => docSnap.data()));
+      },
+      (err) => console.error('Failed to load attendance records:', err)
+    );
+    return unsubscribe;
+  }, []);
+
+  // Merge each student with their computed attendance rate. `attendance`
+  // is null (not 0) when a student has no roll-call history yet, so the
+  // UI can distinguish "no data" from "genuinely 0% attendance."
+  const studentsWithAttendance = useMemo(() => {
+    const statsByStudent = new Map();
+    for (const record of attendanceRecords) {
+      if (!record.studentId) continue;
+      const stats = statsByStudent.get(record.studentId) || { present: 0, total: 0 };
+      stats.total += 1;
+      if (record.status === 'Present' || record.status === 'Late') stats.present += 1;
+      statsByStudent.set(record.studentId, stats);
+    }
+    return students.map((s) => {
+      const stats = statsByStudent.get(s.id);
+      const attendance = stats && stats.total > 0
+        ? Math.round((stats.present / stats.total) * 1000) / 10
+        : null;
+      return { ...s, attendance };
+    });
+  }, [students, attendanceRecords]);
 
   useEffect(() => {
     if (!showModal) return;
@@ -129,9 +166,9 @@ export default function Students() {
 
   // Filter students for teacher assigned classes
   const teacherAssignedStudents = useMemo(() => {
-    if (!isTeacher) return students;
-    return students.filter((s) => isStudentInTeacherClasses(s, userProfile?.assignedClasses || ['Class 10A']));
-  }, [students, isTeacher, userProfile]);
+    if (!isTeacher) return studentsWithAttendance;
+    return studentsWithAttendance.filter((s) => isStudentInTeacherClasses(s, userProfile?.assignedClasses || ['Class 10A']));
+  }, [studentsWithAttendance, isTeacher, userProfile]);
 
   const filteredStudents = teacherAssignedStudents.filter((s) => {
     if (!searchQuery) return true;
@@ -145,9 +182,10 @@ export default function Students() {
   });
 
   const totalStudents = teacherAssignedStudents.length;
+  const studentsWithAttendanceData = teacherAssignedStudents.filter((s) => s.attendance !== null);
   const avgAttendance =
-    totalStudents > 0
-      ? (teacherAssignedStudents.reduce((sum, s) => sum + s.attendance, 0) / totalStudents).toFixed(1)
+    studentsWithAttendanceData.length > 0
+      ? (studentsWithAttendanceData.reduce((sum, s) => sum + s.attendance, 0) / studentsWithAttendanceData.length).toFixed(1)
       : '0.0';
   const overdueCount = teacherAssignedStudents.filter((s) => s.feeStatus === 'Overdue').length;
 
@@ -171,7 +209,6 @@ export default function Students() {
       guardianContact: student.guardianContact,
       guardianEmail: student.guardianEmail || '',
       feeStatus: student.feeStatus,
-      attendance: student.attendance,
       avatar: student.avatar || ''
     });
     setModalMode('edit');
@@ -242,7 +279,6 @@ export default function Students() {
       guardianContact: form.guardianContact.trim(),
       guardianEmail: form.guardianEmail.trim(),
       feeStatus: form.feeStatus,
-      attendance: form.attendance === '' ? 0 : Number(form.attendance),
       avatar: form.avatar || ''
     };
 
@@ -313,6 +349,13 @@ export default function Students() {
           >
             <span class="material-symbols-outlined text-[20px]">auto_awesome</span>
             AI Parent Notice
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            class="flex items-center gap-xs px-md py-2 bg-surface border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface hover:bg-surface-container-low transition-all"
+          >
+            <span class="material-symbols-outlined text-[20px]">upload_file</span>
+            Import
           </button>
           <button
             onClick={openAddModal}
@@ -409,15 +452,19 @@ export default function Students() {
                       </td>
                     )}
                     <td class="px-lg py-md">
-                      <div class="flex items-center gap-sm">
-                        <div class="w-16 h-2 bg-surface-container-high rounded-full overflow-hidden">
-                          <div
-                            class={`h-full ${st.attendance < 80 ? 'bg-error' : 'bg-secondary'}`}
-                            style={{ width: `${st.attendance}%` }}
-                          ></div>
+                      {st.attendance === null ? (
+                        <span class="text-xs text-on-surface-variant/60 italic">No data yet</span>
+                      ) : (
+                        <div class="flex items-center gap-sm">
+                          <div class="w-16 h-2 bg-surface-container-high rounded-full overflow-hidden">
+                            <div
+                              class={`h-full ${st.attendance < 80 ? 'bg-error' : 'bg-secondary'}`}
+                              style={{ width: `${st.attendance}%` }}
+                            ></div>
+                          </div>
+                          <span class="font-label-md text-label-md text-on-surface">{st.attendance}%</span>
                         </div>
-                        <span class="font-label-md text-label-md text-on-surface">{st.attendance}%</span>
-                      </div>
+                      )}
                     </td>
                     <td class="px-lg py-md" onClick={(e) => e.stopPropagation()}>
                       <button
@@ -493,7 +540,9 @@ export default function Students() {
               )}
               <div class="flex justify-between py-xs border-b border-outline-variant/30">
                 <span class="text-on-surface-variant font-label-md">Attendance Rate</span>
-                <span class="font-bold text-on-surface">{selectedStudent.attendance}%</span>
+                <span class="font-bold text-on-surface">
+                  {selectedStudent.attendance === null ? 'No data yet' : `${selectedStudent.attendance}%`}
+                </span>
               </div>
             </div>
 
@@ -580,6 +629,10 @@ export default function Students() {
             </div>
           </div>
         </div>
+      )}
+
+      {showImportModal && (
+        <ImportStudentsModal onClose={() => setShowImportModal(false)} />
       )}
 
       {showModal && (
@@ -719,19 +772,6 @@ export default function Students() {
                   </select>
                 </div>
               )}
-
-              <div>
-                <label class="block font-label-md text-on-surface-variant mb-xs">Attendance %</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={form.attendance}
-                  onChange={(e) => handleFormChange('attendance', e.target.value)}
-                  placeholder="98"
-                  class="w-full border border-outline-variant rounded-lg px-md py-2 outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-surface text-on-surface"
-                />
-              </div>
             </div>
 
             {modalMode === 'edit' && (

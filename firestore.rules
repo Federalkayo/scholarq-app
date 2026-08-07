@@ -2,56 +2,95 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Admin check reads the requester's own profile doc. Safe against
+    // privilege escalation because that doc's `role` field can only ever
+    // be set by a Cloud Function (Admin SDK), never by a client write —
+    // see the `users` rules below.
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // A self-edit (e.g. updating your own name/phone/bio/avatar in Settings)
+    // is only allowed if role, schoolId, and assignedClasses are untouched.
+    // This is what actually prevents a user from just writing role: "admin"
+    // to their own document.
+    function onlyEditingOwnProfileFields() {
+      return request.resource.data.role == resource.data.role &&
+        request.resource.data.schoolId == resource.data.schoolId &&
+        request.resource.data.assignedClasses == resource.data.assignedClasses;
+    }
+
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if isSelf(userId) || isAdmin();
+      // Profile documents (with their role/schoolId/assignedClasses) are
+      // only ever created by the redeemInviteCode Cloud Function, which
+      // uses the Admin SDK and bypasses these rules entirely. No client
+      // write can create one directly — this is what closes the
+      // "self-register as admin from devtools" hole.
+      allow create: if false;
+      allow update: if isSelf(userId) && onlyEditingOwnProfileFields();
+      allow delete: if false;
     }
 
     match /inviteCodes/{code} {
-      allow read, write: if true;
+      // Invite codes let anyone who reads one self-register with whatever
+      // role and class assignment the code carries — admin-only, both ways.
+      allow read, write: if isAdmin();
     }
 
     match /students/{studentId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     match /fees/{invoiceId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     match /feeStructures/{structureId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     match /attendance/{recordId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     // Portal Settings collection
     match /settings/{settingId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     // In-app notifications (bell + toast popups). A signed-in staff member
     // may only read/update their own notifications; writes normally come
     // from Cloud Functions using the Admin SDK, which bypasses these rules.
     match /notifications/{notificationId} {
-      allow read, update, create, delete: if request.auth != null;
+      allow read, update: if isSignedIn() && request.auth.uid == resource.data.recipientUid;
+      allow create, delete: if isSignedIn();
     }
 
     // Per-user registered browser push tokens.
     match /users/{userId}/fcmTokens/{tokenId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isSelf(userId);
     }
 
     // Audit log of parent SMS/email dispatches.
     match /parentNotifications/{noticeId} {
-      allow read, create: if request.auth != null;
+      allow read, create: if isSignedIn();
     }
 
     // School-wide announcements (admin composed).
     match /announcements/{announcementId} {
       allow read: if true;
-      allow create: if request.auth != null;
+      allow create: if isSignedIn();
     }
 
   }
