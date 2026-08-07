@@ -57,11 +57,13 @@ exports.dispatchParentNotice = onCall(
         results.email = { success: false, error: "No guardian email on file." };
       } else {
         try {
+          const alreadyHasGreeting = /^dear\s/i.test(message.trim());
+          const greeting = alreadyHasGreeting ? "" : `<p>Dear ${guardianName || "Guardian"},</p>`;
           await sendEmail({
             to: guardianEmail,
             toName: guardianName,
             subject,
-            html: `<div style="font-family:sans-serif;line-height:1.5"><p>Dear ${guardianName || "Guardian"},</p><p>${message.replace(/\n/g, "<br/>")}</p><p style="color:#666;font-size:12px;margin-top:24px">Sent via ScholarQ School Portal</p></div>`,
+            html: `<div style="font-family:sans-serif;line-height:1.5">${greeting}<p>${message.replace(/\n/g, "<br/>")}</p><p style="color:#666;font-size:12px;margin-top:24px">Sent via ScholarQ School Portal</p></div>`,
             text: message,
           });
           results.email = { success: true };

@@ -1,9 +1,22 @@
 /* eslint-disable no-undef */
-// Firebase Cloud Messaging background service worker.
-// Handles push notifications that arrive while the ScholarQ tab is
-// closed or backgrounded. Foreground messages (tab open/focused) are
-// instead handled in src/lib/messaging.js and rendered as the in-app
-// Claude-style toast, so this file only needs the background case.
+// Combined service worker for ScholarQ / EduAdmin Pro.
+//
+// This single file does two jobs that both need to run in the
+// service worker context, so they're merged here instead of using
+// two separate registrations (which would fight over the same scope):
+//
+//   1. PWA offline support — precaches the built app shell via Workbox,
+//      injected automatically by vite-plugin-pwa at build time.
+//   2. Firebase Cloud Messaging — handles push notifications that
+//      arrive while the tab is closed or backgrounded. Foreground
+//      messages are handled separately in src/lib/messaging.js.
+//
+// Registered from src/lib/messaging.js as '/firebase-messaging-sw.js'
+// (vite-plugin-pwa is configured to build this file to that filename).
+
+import { precacheAndRoute } from "workbox-precaching";
+
+precacheAndRoute(self.__WB_MANIFEST);
 
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js");
@@ -46,4 +59,11 @@ self.addEventListener("notificationclick", (event) => {
       if (clients.openWindow) return clients.openWindow(link);
     })
   );
+});
+
+// Activate the updated service worker immediately rather than waiting
+// for all tabs to close — keeps the offline cache and push handling current.
+self.skipWaiting();
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
 });

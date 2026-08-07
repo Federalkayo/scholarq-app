@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useOutletContext, Navigate } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import StatusChip from '../components/ui/StatusChip';
 import Avatar from '../components/ui/Avatar';
@@ -48,7 +49,7 @@ export default function Fees() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [sentReminderId, setSentReminderId] = useState(null);
+  const [reminderStatus, setReminderStatus] = useState(null); // { success, fail } | null
   const [animateBars, setAnimateBars] = useState(false);
 
   // Add / Edit invoice modal state
@@ -136,7 +137,10 @@ export default function Fees() {
               name: data.name || 'Unnamed Student',
               classSec: [data.grade, data.section].filter(Boolean).join(' - '),
               grade: data.grade || '',
-              avatar: data.avatar || ''
+              avatar: data.avatar || '',
+              guardian: data.guardian || '',
+              guardianContact: data.guardianContact || '',
+              guardianEmail: data.guardianEmail || ''
             };
           })
         );
@@ -281,9 +285,61 @@ export default function Fees() {
   const feeTrendData = computeFeeTrend(invoices, 5);
   const hasAnyTrendData = feeTrendData.some((d) => d.hasData);
 
-  const handleSendReminder = (id) => {
-    setSentReminderId(id);
-    setTimeout(() => setSentReminderId(null), 3000);
+  const handleSendReminder = async (id) => {
+    const targets = id === 'ALL'
+      ? invoices.filter((inv) => inv.status === 'Overdue' || inv.status === 'Pending' || inv.status === 'Partially Paid')
+      : invoices.filter((inv) => inv.id === id);
+
+    if (targets.length === 0) return;
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const inv of targets) {
+      const student =
+        (inv.studentId && students.find((s) => s.id === inv.studentId)) ||
+        students.find((s) => s.name.trim().toLowerCase() === (inv.studentName || '').trim().toLowerCase());
+
+      const guardianContact = student?.guardianContact || '';
+      const guardianEmail = student?.guardianEmail || '';
+
+      if (!guardianContact && !guardianEmail) {
+        failCount++;
+        continue;
+      }
+
+      const balance = (Number(inv.amount) || 0) - (Number(inv.amountPaid) || 0);
+      const isOverdue = inv.status === 'Overdue';
+      const guardianDisplayName = student?.guardian || 'Guardian';
+      const message = isOverdue
+        ? `Dear ${guardianDisplayName}, this is a reminder that ${inv.studentName}'s ${inv.feeType} balance of ₦${balance.toLocaleString()} was due on ${inv.dueDate} and is now overdue. Kindly settle at your earliest convenience.`
+        : `Dear ${guardianDisplayName}, this is a reminder that ${inv.studentName}'s ${inv.feeType} balance of ₦${balance.toLocaleString()} is due on ${inv.dueDate}. Kindly settle before the due date to avoid late penalties.`;
+
+      const channels = [];
+      if (guardianContact) channels.push('sms');
+      if (guardianEmail) channels.push('email');
+
+      try {
+        const dispatchParentNotice = httpsCallable(functions, 'dispatchParentNotice');
+        await dispatchParentNotice({
+          studentId: inv.studentId || null,
+          studentName: inv.studentName,
+          guardianName: student?.guardian || '',
+          guardianContact,
+          guardianEmail,
+          subject: `Fee ${isOverdue ? 'Overdue' : 'Reminder'}: ${inv.studentName}`,
+          message,
+          channels,
+        });
+        successCount++;
+      } catch (err) {
+        console.error(`Reminder failed for ${inv.studentName}:`, err);
+        failCount++;
+      }
+    }
+
+    setReminderStatus({ success: successCount, fail: failCount });
+    setTimeout(() => setReminderStatus(null), 4000);
   };
 
   const openAddModal = () => {
@@ -536,10 +592,13 @@ export default function Fees() {
 
   return (
     <div class="p-xl max-w-container-max mx-auto animate-fadeIn">
-      {sentReminderId && (
-        <div class="fixed bottom-6 right-6 bg-primary text-on-primary px-lg py-md rounded-lg shadow-xl z-50 flex items-center gap-md animate-fadeIn">
+      {reminderStatus && (
+        <div class="fixed bottom-24 right-6 bg-primary text-on-primary px-lg py-md rounded-lg shadow-xl z-50 flex items-center gap-md animate-fadeIn">
           <span class="material-symbols-outlined text-secondary-fixed">check_circle</span>
-          <span class="font-label-md">Payment reminder successfully sent!</span>
+          <span class="font-label-md">
+            {reminderStatus.success} reminder{reminderStatus.success === 1 ? '' : 's'} sent
+            {reminderStatus.fail ? `, ${reminderStatus.fail} failed (missing guardian contact)` : ''}
+          </span>
         </div>
       )}
 
