@@ -18,6 +18,15 @@ export default defineConfig({
       // ('/firebase-messaging-sw.js'), so no other code needs to change.
       filename: 'firebase-messaging-sw.js',
       registerType: 'autoUpdate',
+      // Without this, the service worker (and therefore FCM push — both
+      // background AND foreground, since getToken() needs a registered SW
+      // to obtain a push subscription) simply doesn't exist while running
+      // `npm run dev`. It's only built during `vite build`. This makes it
+      // available locally too, so push can actually be tested pre-deploy.
+      devOptions: {
+        enabled: true,
+        type: 'module',
+      },
       includeAssets: ['favicon.png', 'icons/apple-touch-icon.png'],
       manifest: {
         name: 'ScholarQ',

@@ -35,13 +35,20 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   const { title, body } = payload.notification || {};
   const link = payload.fcmOptions?.link || payload.data?.route || "/";
+  const type = payload.data?.type || "scholarq-notification";
 
   self.registration.showNotification(title || "ScholarQ", {
     body: body || "",
     icon: "/scholarq-icon.png",
     badge: "/scholarq-icon.png",
     data: { link },
-    tag: payload.data?.type || "scholarq-notification",
+    // Unique per-notification tag (type + timestamp) so each push still pops up
+    // and re-alerts (sound/banner) even when several of the same type arrive in
+    // a row. Using just `type` as the tag made every 2nd+ notification of the
+    // same kind (e.g. "attendance") silently replace the previous one instead
+    // of showing — that's what was causing notifications to "show once and stop".
+    tag: `${type}-${Date.now()}`,
+    renotify: true,
   });
 });
 

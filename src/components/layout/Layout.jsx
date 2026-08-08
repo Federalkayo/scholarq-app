@@ -8,8 +8,8 @@ import NotificationToastContainer from '../ui/NotificationToast';
 export default function Layout() {
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedClass, setSelectedClass] = useState('Class 10');
-  const [selectedSection, setSelectedSection] = useState('Section A');
+  const [selectedClass, setSelectedClass] = useState('All Classes');
+  const [selectedSection, setSelectedSection] = useState('All Sections');
 
   return (
     <div class="min-h-screen bg-background text-on-surface flex relative">

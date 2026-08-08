@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { collection, onSnapshot, query, where, doc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import AttendanceToggle from '../components/ui/AttendanceToggle';
 import Avatar from '../components/ui/Avatar';
 import { useAuth } from '../context/AuthContext';
 import { isStudentInTeacherClasses } from '../utils/classUtils';
+
+const STATUS_FILTERS = ['All', 'Present', 'Absent', 'Late', 'Unmarked'];
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
@@ -27,11 +30,17 @@ export default function Attendance() {
   const { userProfile } = useAuth();
   const isTeacher = userProfile?.role === 'teacher';
   const assignedClasses = userProfile?.assignedClasses || ['Class 10A'];
+  // selectedClass/selectedSection come from the topbar dropdowns (e.g. "Class 10", "Section A"),
+  // shared via Layout's Outlet context. The topbar swaps its search input out for these two
+  // selects on this route, so we also keep a page-local search box below.
+  const { selectedClass, selectedSection } = useOutletContext();
 
   const [students, setStudents] = useState([]);
   const [attendanceMap, setAttendanceMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [search, setSearch] = useState('');
   const date = todayISO();
 
   // Real student roster
@@ -87,6 +96,36 @@ export default function Attendance() {
       })),
     [filteredStudents, attendanceMap]
   );
+
+  // Matches a student against the topbar's Class / Section selectors
+  // (values like "Grade 10" / "Section A", or "All Classes" / "All Sections" as wildcards).
+  function matchesTopbarSelection(student) {
+    const gradeNum = (student.grade || '').replace(/^Grade\s*/i, '').trim();
+    const secLetter = (student.section || '').replace(/^Section\s*/i, '').trim();
+    const isAllClasses = !selectedClass || selectedClass === 'All Classes';
+    const isAllSections = !selectedSection || selectedSection === 'All Sections';
+    const selectedGradeNum = isAllClasses ? '' : selectedClass.replace(/^Grade\s*/i, '').trim();
+    const selectedSecLetter = isAllSections ? '' : selectedSection.replace(/^Section\s*/i, '').trim();
+    const classMatches = isAllClasses || gradeNum === selectedGradeNum;
+    const sectionMatches = isAllSections || secLetter === selectedSecLetter;
+    return classMatches && sectionMatches;
+  }
+
+  // Search + status + topbar class/section filters applied on top of the role-scoped roll call
+  const visibleRollCall = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return rollCall.filter((st) => {
+      const student = students.find((s) => s.id === st.id);
+      const matchesSearch =
+        !q ||
+        st.name.toLowerCase().includes(q) ||
+        st.classSec.toLowerCase().includes(q) ||
+        String(st.rollNo).includes(q);
+      const matchesStatus = statusFilter === 'All' || st.status === statusFilter;
+      const matchesClassSection = student ? matchesTopbarSelection(student) : true;
+      return matchesSearch && matchesStatus && matchesClassSection;
+    });
+  }, [rollCall, students, search, statusFilter, selectedClass, selectedSection]);
 
   // Deterministic doc ID (date + studentId) means marking a student twice
   // updates the same record instead of creating duplicates.
@@ -177,10 +216,42 @@ export default function Attendance() {
       <div class="flex flex-col lg:flex-row gap-lg">
         <div class="flex-1">
           <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
-            <div class="px-lg py-md border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
+            <div class="px-lg py-md border-b border-outline-variant bg-surface-container-low flex flex-wrap justify-between items-center gap-md">
               <h2 class="font-headline-sm text-on-surface">Student Roll Call</h2>
               <span class="text-label-sm text-on-surface-variant">{todayDisplay()}</span>
             </div>
+
+            <div class="px-lg py-md border-b border-outline-variant bg-surface-container-lowest flex flex-wrap items-center gap-md">
+              <div class="flex flex-wrap gap-xs">
+                {STATUS_FILTERS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    class={`px-md py-1 rounded-full text-label-sm border transition-colors ${
+                      statusFilter === s
+                        ? 'bg-primary text-on-primary border-primary'
+                        : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+
+              <div class="relative ml-auto w-full sm:w-64">
+                <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
+                  search
+                </span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search this roll call..."
+                  class="w-full bg-surface-container-low border border-outline-variant/40 rounded-lg pl-8 pr-3 py-1.5 text-label-sm focus:ring-2 focus:ring-primary/20 outline-none text-on-surface"
+                />
+              </div>
+            </div>
+
             {loading ? (
               <div class="p-xl text-center text-on-surface-variant">Loading roster…</div>
             ) : error ? (
@@ -189,9 +260,13 @@ export default function Attendance() {
               <div class="p-xl text-center text-on-surface-variant">
                 No students yet — add some in Firestore first.
               </div>
+            ) : visibleRollCall.length === 0 ? (
+              <div class="p-xl text-center text-on-surface-variant">
+                No students match your search or filters.
+              </div>
             ) : (
               <div class="divide-y divide-outline-variant">
-                {rollCall.map((st) => (
+                {visibleRollCall.map((st) => (
                   <div
                     key={st.id}
                     class="px-lg py-md hover:bg-surface-container-low transition-colors flex items-center justify-between group"

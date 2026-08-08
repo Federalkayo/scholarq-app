@@ -3,6 +3,7 @@ import { collection, query, where, orderBy, limit, onSnapshot, doc, updateDoc } 
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import { useAuth } from './AuthContext';
+import { onForegroundMessage } from '../lib/messaging';
 
 const NotificationContext = createContext(null);
 
@@ -66,6 +67,45 @@ export function NotificationProvider({ children }) {
 
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.uid]);
+
+  // FCM's service worker only auto-shows a system notification when the tab
+  // is backgrounded or closed. While the tab is open and focused, push
+  // messages instead arrive here via onMessage — so we have to trigger the
+  // system notification ourselves, or the user only ever sees the in-app
+  // toast above (which comes from the Firestore listener, not from push).
+  useEffect(() => {
+    if (!currentUser) return undefined;
+
+    let unsubscribe = () => {};
+    let cancelled = false;
+
+    onForegroundMessage((payload) => {
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      const { title, body } = payload.notification || {};
+      const link = payload.fcmOptions?.link || payload.data?.route || '/';
+
+      const n = new Notification(title || 'ScholarQ', {
+        body: body || '',
+        icon: '/scholarq-icon.png',
+        tag: `${payload.data?.type || 'scholarq-notification'}-${Date.now()}`,
+      });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+        if (link && window.location.pathname !== link) {
+          window.location.assign(link);
+        }
+      };
+    }).then((unsub) => {
+      if (cancelled) unsub();
+      else unsubscribe = unsub;
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [currentUser?.uid]);
 
   const pushToast = useCallback((notification) => {

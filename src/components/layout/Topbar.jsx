@@ -67,13 +67,21 @@ export default function Topbar({ searchFilter, onSearchChange, selectedClass, on
           <div class="flex items-center gap-md">
             <div class="relative">
               <select
-                value={selectedClass || 'Class 10'}
+                value={selectedClass || 'All Classes'}
                 onChange={(e) => onClassChange && onClassChange(e.target.value)}
                 class="appearance-none bg-surface-container-low border border-outline-variant rounded-lg pl-md pr-xl py-xs text-label-md focus:ring-2 focus:ring-primary outline-none cursor-pointer text-on-surface"
               >
-                <option>Class 10</option>
-                <option>Class 11</option>
-                <option>Class 12</option>
+                <option>All Classes</option>
+                <option>Grade 3</option>
+                <option>Grade 4</option>
+                <option>Grade 5</option>
+                <option>Grade 6</option>
+                <option>Grade 7</option>
+                <option>Grade 8</option>
+                <option>Grade 9</option>
+                <option>Grade 10</option>
+                <option>Grade 11</option>
+                <option>Grade 12</option>
               </select>
               <span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant scale-75">
                 expand_more
@@ -81,13 +89,15 @@ export default function Topbar({ searchFilter, onSearchChange, selectedClass, on
             </div>
             <div class="relative">
               <select
-                value={selectedSection || 'Section A'}
+                value={selectedSection || 'All Sections'}
                 onChange={(e) => onSectionChange && onSectionChange(e.target.value)}
                 class="appearance-none bg-surface-container-low border border-outline-variant rounded-lg pl-md pr-xl py-xs text-label-md focus:ring-2 focus:ring-primary outline-none cursor-pointer text-on-surface"
               >
+                <option>All Sections</option>
                 <option>Section A</option>
                 <option>Section B</option>
                 <option>Section C</option>
+                <option>Section D</option>
               </select>
               <span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant scale-75">
                 expand_more
