@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS = {
     attendanceDigest: true,
     feeAlerts: true,
     emergencySms: true,
+    registrationAlerts: true,
     weeklyReportEmail: false
   },
   security: {

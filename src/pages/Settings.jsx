@@ -574,6 +574,18 @@ export default function Settings() {
                   class="w-5 h-5 accent-primary cursor-pointer"
                 />
               </div>
+              <div class="flex items-center justify-between p-md bg-surface-container-low rounded-lg border border-outline-variant/40">
+                <div>
+                  <p class="font-bold text-on-surface text-body-md">New Registration Confirmations</p>
+                  <p class="text-xs text-on-surface-variant">Auto-send a welcome SMS + email to guardians when a student is registered.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={!!notifications.registrationAlerts}
+                  onChange={(e) => handleNotificationToggle('registrationAlerts', e.target.checked)}
+                  class="w-5 h-5 accent-primary cursor-pointer"
+                />
+              </div>
             </div>
           </div>
         )}

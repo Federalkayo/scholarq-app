@@ -10,6 +10,7 @@ const { dispatchParentNotice } = require("./notifications/dispatchParentNotice")
 const { onAttendanceWrite } = require("./notifications/attendanceAlerts");
 const { scheduledFeeReminders } = require("./notifications/feeReminders");
 const { onAnnouncementCreate } = require("./notifications/announcements");
+const { onStudentRegistered } = require("./notifications/registrationConfirmation");
 
 exports.saveFcmToken = saveFcmToken;
 exports.removeFcmToken = removeFcmToken;
@@ -18,6 +19,7 @@ exports.dispatchParentNotice = dispatchParentNotice;
 exports.onAttendanceWrite = onAttendanceWrite;
 exports.scheduledFeeReminders = scheduledFeeReminders;
 exports.onAnnouncementCreate = onAnnouncementCreate;
+exports.onStudentRegistered = onStudentRegistered;
 
 /**
  * Callable Cloud Function: redeemInviteCode
